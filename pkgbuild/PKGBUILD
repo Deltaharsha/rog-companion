@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')
 url='https://github.com/Deltaharsha/rog-companion'
-license=('MIT')
+license=('MIT' 'OFL-1.1')
 depends=('asusctl' 'power-profiles-daemon' 'brightnessctl' 'upower' 'python-gobject' 'polkit'
          'qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt')
 optdepends=('hyprland: automatic refresh-rate switching'
@@ -35,4 +35,5 @@ package() {
   install -Dm644 pkgbuild/rog-companion.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/rog-companion.svg"
   install -Dm644 pkgbuild/rog-companion.desktop "$pkgdir/usr/share/applications/rog-companion.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 src/fonts/Inter-OFL.txt "$pkgdir/usr/share/licenses/$pkgname/Inter-OFL.txt"
 }
