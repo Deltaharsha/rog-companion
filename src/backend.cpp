@@ -95,6 +95,12 @@ QList<int> Backend::panelRates(){
  }
  std::sort(rates.begin(),rates.end());return rates;
 }
+// Destroying a running QProcess kills it and emits finished(). Our handlers would then call
+// readState() on a half-destroyed Backend, so cut them off before any member is torn down.
+Backend::~Backend(){
+ m_poll.stop();m_timeout.stop();m_gpuTimeout.stop();
+ m_process.disconnect();m_gpuProcess.disconnect();
+}
 void Backend::setMessage(const QString&s){m_message=s;emit messageChanged();}
 void Backend::execute(const QList<Command>&cmds,std::function<void(bool,QString)>done){
  if(m_busy){setMessage(tr("Wait for the current operation to finish."));return;}

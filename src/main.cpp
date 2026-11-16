@@ -27,6 +27,11 @@ int main(int argc,char **argv){
  QGuiApplication::setDesktopFileName("rog-companion");
  QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");
  QQuickStyle::setStyle("Material");
+ const bool gui=!shot&&!status&&!apply&&!listControls;
+ const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/rog-companion-control";
+ QLockFile lock(ipcPath+".lock");lock.setStaleLockTime(0);
+ // A panel is already running: ask it to open its controls and leave, before reading any hardware.
+ if(gui&&!lock.tryLock()){QLocalSocket socket;socket.connectToServer(ipcPath);if(socket.waitForConnected(1000)){socket.write("open");socket.waitForBytesWritten(1000);return 0;}QTextStream(stderr)<<"ROG Companion is running but its control socket is unavailable.\n";return 1;}
  Backend backend;
  if(apply){
   if(args.size()<3){QTextStream(stderr)<<"Usage: rog-companion set CONTROL VALUE --json\n";return 1;}
@@ -43,9 +48,6 @@ int main(int argc,char **argv){
    if(!c["available"].toBool())o["reason"]=c["reason"].toString();out<<o;}
   QTextStream(stdout)<<QJsonDocument(out).toJson();app.quit();});return app.exec();}
  if(status){QTimer::singleShot(1200,&app,[&]{auto s=backend.state();QTextStream(stdout)<<QJsonDocument(QJsonObject::fromVariantMap(s)).toJson();app.quit();});return app.exec();}
- const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/rog-companion-control";
- QLockFile lock(ipcPath+".lock");lock.setStaleLockTime(0);
- if(!shot&&!lock.tryLock()){QLocalSocket socket;socket.connectToServer(ipcPath);if(socket.waitForConnected(1000)){socket.write("open");socket.waitForBytesWritten(1000);return 0;}QTextStream(stderr)<<"ROG Companion is running but its control socket is unavailable.\n";return 1;}
  Theme theme;Translator translator(args.contains("--language-test")?args.value(args.indexOf("--language-test")+1):QString());app.installTranslator(&translator);
  QQmlApplicationEngine engine;QObject::connect(&translator,&Translator::changed,&engine,&QQmlEngine::retranslate);
  engine.rootContext()->setContextProperty("backend",&backend);engine.rootContext()->setContextProperty("theme",&theme);engine.rootContext()->setContextProperty("translator",&translator);

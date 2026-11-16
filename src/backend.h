@@ -16,6 +16,7 @@ class Backend : public QObject {
  Q_PROPERTY(QString message READ message NOTIFY messageChanged)
 public:
  explicit Backend(QObject *parent=nullptr, bool start=true);
+ ~Backend() override;
  QVariantMap state() const {return m_state;}
  QVariantList controls() const {return m_controls;}
  bool busy() const {return m_busy;}
