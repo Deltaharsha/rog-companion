@@ -41,6 +41,7 @@ private:
  QString armoury(const QString &name) const;
  void requestQueuedGpu(std::function<void()> after={});
  void applyQueuedGpu(const QVariantMap &queued);
+ static QList<int> panelRates(); QList<int> m_panelRates;
  int m_gpuGeneration=0; std::function<void()> m_afterGpu;
  QVariantMap m_state; QVariantList m_controls; QString m_message;
  bool m_busy=false; QTimer m_poll,m_timeout; QProcess m_process;

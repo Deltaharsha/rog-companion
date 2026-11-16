@@ -4,7 +4,7 @@
 
 #include "backend.h"
 
-class ZephyrTests : public QObject {
+class RogCompanionTests : public QObject {
     Q_OBJECT
 
 private slots:
@@ -72,5 +72,5 @@ private slots:
     }
 };
 
-QTEST_GUILESS_MAIN(ZephyrTests)
-#include "zephyr_tests.moc"
+QTEST_GUILESS_MAIN(RogCompanionTests)
+#include "rog_companion_tests.moc"

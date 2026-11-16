@@ -1,7 +1,7 @@
 QT += core gui qml quick quickcontrols2 dbus network
 
 CONFIG += c++17 release
-TARGET = zephyr
+TARGET = rog-companion
 TEMPLATE = app
 
 INCLUDEPATH += /usr/include/LayerShellQt

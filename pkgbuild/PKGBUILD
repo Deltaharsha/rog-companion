@@ -1,24 +1,38 @@
-pkgname=zephyr
-pkgver=0.1.0
+# Maintainer: Deltaharsha <132008444+Deltaharsha@users.noreply.github.com>
+pkgname=rog-companion
+pkgver=0.2.0
 pkgrel=1
-pkgdesc='Control ASUS laptop power and performance settings'
+pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')
+url='https://github.com/Deltaharsha/rog-companion'
 license=('MIT')
-depends=('asusctl' 'power-profiles-daemon' 'brightnessctl' 'qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt')
+depends=('asusctl' 'power-profiles-daemon' 'brightnessctl' 'upower' 'python-gobject' 'polkit'
+         'qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt')
+optdepends=('hyprland: automatic refresh-rate switching'
+            'nvidia-utils: NVIDIA GPU temperature and power readings')
 makedepends=('gcc' 'make')
-source=()
-sha256sums=()
+install=rog-companion.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
 
 build() {
-  cd "$startdir/.."
+  cd "$pkgname-$pkgver"
   ./bin/build
 }
 
+check() {
+  cd "$pkgname-$pkgver"
+  ./bin/test
+}
+
 package() {
-  cd "$startdir/.."
-  install -Dm755 build/zephyr "$pkgdir/usr/bin/zephyr"
-  install -Dm755 build/zephyr-power-helper "$pkgdir/usr/lib/zephyr/zephyr-power-helper"
+  cd "$pkgname-$pkgver"
+  install -Dm755 build/rog-companion "$pkgdir/usr/bin/rog-companion"
+  install -Dm755 build/rog-companion-power-helper "$pkgdir/usr/lib/rog-companion/rog-companion-power-helper"
+  install -Dm755 src/rog-companion-policy "$pkgdir/usr/lib/rog-companion/rog-companion-policy"
+  install -Dm644 pkgbuild/systemd/rog-companion.service "$pkgdir/usr/lib/systemd/user/rog-companion.service"
+  install -Dm644 pkgbuild/systemd/rog-companion-policy.service "$pkgdir/usr/lib/systemd/user/rog-companion-policy.service"
+  install -Dm644 pkgbuild/rog-companion.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/rog-companion.svg"
+  install -Dm644 pkgbuild/rog-companion.desktop "$pkgdir/usr/share/applications/rog-companion.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 "$startdir/zephyr.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/zephyr.svg"
-  install -Dm644 "$startdir/zephyr.desktop" "$pkgdir/usr/share/applications/zephyr.desktop"
 }

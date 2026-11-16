@@ -20,10 +20,17 @@
 #include <memory>
 #include <LayerShellQt/window.h>
 #include <cmath>
+#include <algorithm>
 
 namespace {
 const QString fw="/sys/class/firmware-attributes/asus-armoury/attributes/";
 QString home(){return QDir::homePath();}
+// Settings live here. Earlier releases were called Zephyr; their policy file is moved over once.
+QString stateDir(){
+ const QString dir=home()+"/.local/state/rog-companion",old=home()+"/.local/state/zephyr";
+ if(!QFileInfo::exists(dir+"/policy.json")&&QFileInfo::exists(old+"/policy.json")){QDir().mkpath(dir);QFile::copy(old+"/policy.json",dir+"/policy.json");}
+ return dir;
+}
 QVariant number(const QString &path,double scale=1) {bool ok=false;double n=Backend::readFile(path).toDouble(&ok);return ok?QVariant(n/scale):QVariant();}
 QVariantList options(std::initializer_list<std::pair<QString,QString>> pairs){QVariantList a;for(auto &p:pairs)a<<QVariantMap{{"label",p.first},{"value",p.second}};return a;}
 QString capture(const QString&s,const QString&key){return QRegularExpression("\\b"+key+":\\s*([^,\\n]+)").match(s).captured(1).trimmed();}
@@ -73,7 +80,20 @@ Backend::Backend(QObject*p,bool start):QObject(p){
   readState();
  });
  connect(&m_poll,&QTimer::timeout,this,&Backend::readState);m_poll.setInterval(5000);
- if(start){readState();QTimer::singleShot(0,this,&Backend::discover);m_poll.start();}
+ if(start){m_panelRates=panelRates();readState();QTimer::singleShot(0,this,&Backend::discover);m_poll.start();}
+}
+QList<int> Backend::panelRates(){
+ QProcess hyprctl;hyprctl.start("hyprctl",{"monitors","-j"});
+ if(!hyprctl.waitForFinished(2000))return {};
+ QList<int> rates;
+ for(const auto &m:QJsonDocument::fromJson(hyprctl.readAllStandardOutput()).array()){
+  const auto o=m.toObject();if(!o["name"].toString().startsWith("eDP-"))continue;
+  const QString prefix=QString("%1x%2@").arg(o["width"].toInt()).arg(o["height"].toInt());
+  for(const auto &mode:o["availableModes"].toArray()){const QString s=mode.toString();
+   if(s.startsWith(prefix)){const int r=qRound(s.mid(prefix.size()).chopped(2).toDouble());if(r>0&&!rates.contains(r))rates<<r;}}
+  break;
+ }
+ std::sort(rates.begin(),rates.end());return rates;
 }
 void Backend::setMessage(const QString&s){m_message=s;emit messageChanged();}
 void Backend::execute(const QList<Command>&cmds,std::function<void(bool,QString)>done){
@@ -82,8 +102,8 @@ void Backend::execute(const QList<Command>&cmds,std::function<void(bool,QString)
 }
 void Backend::step(){if(m_queue.isEmpty()){complete(true,m_output.trimmed());return;}auto c=m_queue.dequeue();m_process.start(c.program,c.args);m_timeout.start();}
 void Backend::complete(bool ok,const QString&out){m_timeout.stop();m_queue.clear();m_busy=false;emit busyChanged();auto cb=std::move(m_done);m_done={};if(cb)cb(ok,out);}
-QVariantMap Backend::policy()const{QFile f(home()+"/.local/state/zephyr/policy.json");if(!f.open(QIODevice::ReadOnly))return {};return QJsonDocument::fromJson(f.readAll()).object().toVariantMap();}
-bool Backend::savePolicy(const QString&key,const QVariant&v){auto d=policy();d[key]=v;QDir().mkpath(home()+"/.local/state/zephyr");QSaveFile f(home()+"/.local/state/zephyr/policy.json");if(!f.open(QIODevice::WriteOnly))return false;f.write(QJsonDocument(QJsonObject::fromVariantMap(d)).toJson());return f.commit();}
+QVariantMap Backend::policy()const{QFile f(stateDir()+"/policy.json");if(!f.open(QIODevice::ReadOnly))return {};return QJsonDocument::fromJson(f.readAll()).object().toVariantMap();}
+bool Backend::savePolicy(const QString&key,const QVariant&v){auto d=policy();d[key]=v;QDir().mkpath(stateDir());QSaveFile f(stateDir()+"/policy.json");if(!f.open(QIODevice::WriteOnly))return false;f.write(QJsonDocument(QJsonObject::fromVariantMap(d)).toJson());return f.commit();}
 void Backend::readState(){
  QVariantMap s;
  s["model"]=readFile("/sys/class/dmi/id/product_name");s["updated"]=QDateTime::currentDateTime().toString("HH:mm:ss");
@@ -223,7 +243,13 @@ void Backend::buildControls(){
  choice("gpu",tr("Graphics mode"),"Power",armoury("gpu_mux_mode")=="0"?"ultimate":armoury("dgpu_disable")=="1"?"integrated":"hybrid",options({{"Hybrid","hybrid"},{"Integrated / Eco","integrated"},{"NVIDIA / Ultimate","ultimate"}}),m_asusAvailable&&!armoury("gpu_mux_mode").isEmpty(),true,tr("Queued by ASUS for reboot. Eco can disable NVIDIA-wired HDMI. Save work before rebooting. Current pending request: %1").arg(m_pendingGpu.isEmpty()?tr("none queued"):m_pendingGpu));
  for(const auto&attr:QStringList{"ppt_pl1_spl","ppt_pl2_sppt","ppt_pl3_fppt","nv_tgp","nv_dynamic_boost","nv_temp_target"}){
   const QMap<QString,QString> labels{{"ppt_pl1_spl",tr("CPU sustained power")},{"ppt_pl2_sppt",tr("CPU short boost power")},{"ppt_pl3_fppt",tr("CPU fast boost power")},{"nv_tgp",tr("GPU power limit")},{"nv_dynamic_boost",tr("GPU Dynamic Boost")},{"nv_temp_target",tr("GPU temperature target")}};
-  auto c=add("unsupported_"+attr,labels[attr],"Power","number",QVariant(),false,tr("Firmware exposes the name but returns device unavailable on this GA403UP. No write is offered."));c["min"]=0;c["max"]=100;c["step"]=1;c["unit"]=attr=="nv_temp_target"?"°C":"W";list<<c;
+  if(!QFileInfo::exists(fw+attr))continue;  // this model has no such limit: don't show it at all
+  // Limits are shown read-only: writing power limits is left to firmware tools until it's tested per model.
+  const auto value=number(fw+attr+"/current_value"),low=number(fw+attr+"/min_value"),high=number(fw+attr+"/max_value");
+  auto c=add("limit_"+attr,labels[attr],"Power","number",value,false,value.isValid()
+     ?tr("Shown for reference. ROG Companion doesn't change firmware power limits yet.")
+     :tr("Your firmware lists this limit but doesn't report a value."));
+  c["min"]=low.isValid()?low.toInt():0;c["max"]=high.isValid()?high.toInt():qMax(100,value.toInt());c["step"]=1;c["unit"]=attr=="nv_temp_target"?"°C":"W";list<<c;
  }
  for(const auto&fan:QStringList{"cpu","gpu","mid"}){
   auto c=add("fan_"+fan,tr("%1 fan curve").arg(fan.toUpper()),"Fans","text","",m_fansAvailable, tr("ASUS fan service is unavailable."),true,tr("%1 profile. Eight increasing temperature points, 0–100% speed. Example: 30c:10%,40c:20%,50c:30%,60c:40%,70c:55%,80c:70%,90c:90%,100c:100%. Apply saves and enables this fan curve.").arg(m_fanProfile));
@@ -233,9 +259,16 @@ void Backend::buildControls(){
  list<<add("fan_enabled",tr("Custom fan curves"),"Fans","toggle",m_fanCurves.value("cpuEnabled").toBool()||m_fanCurves.value("gpuEnabled").toBool()||m_fanCurves.value("midEnabled").toBool(),m_fansAvailable,{},true,tr("Enable or disable all custom curves for the active profile."));
  m_backlight.clear();QDir bl("/sys/class/backlight");for(const auto&n:bl.entryList(QDir::Dirs|QDir::NoDotAndDotDot)){if(readFile(bl.filePath(n)+"/max_brightness").toInt()>0){m_backlight=n;break;}}
  double max=readFile(bl.filePath(m_backlight)+"/max_brightness").toDouble();numeric("brightness",tr("Display brightness"),"System",max>0?100*readFile(bl.filePath(m_backlight)+"/brightness").toDouble()/max:0,5,100,"%",!m_backlight.isEmpty());
- choice("refreshMode",tr("Internal display refresh"),"System",pol.value("refreshMode","auto"),options({{"Auto · 60 battery / 120 AC","auto"},{"60 Hz","60"},{"120 Hz","120"}}),true,false,tr("Managed by the existing laptop display service; applies within 30 seconds."));
+ {
+  QVariantList rates;
+  if(m_panelRates.size()>1)rates<<QVariantMap{{"label",tr("Auto · %1 Hz on battery, %2 Hz plugged in").arg(m_panelRates.first()).arg(m_panelRates.last())},{"value","auto"}};
+  else rates<<QVariantMap{{"label",tr("Auto")},{"value","auto"}};
+  for(int rate:m_panelRates)rates<<QVariantMap{{"label",tr("%1 Hz").arg(rate)},{"value",QString::number(rate)}};
+  choice("refreshMode",tr("Built-in display refresh"),"System",pol.value("refreshMode","auto"),rates,m_panelRates.size()>1,false,tr("Applied by the ROG Companion background service within 30 seconds."));
+ }
  numeric("keyboard",tr("Keyboard brightness"),"Lighting",number("/sys/class/leds/asus::kbd_backlight/brightness"),0,3,"",QFileInfo::exists("/sys/class/leds/asus::kbd_backlight"));
- auto aura=readFile("/etc/asusd/aura_19b6.ron");
+ // asusd names the file after the keyboard's USB product id (aura_19b6.ron, aura_1866.ron, …).
+ QString aura;{const auto files=QDir("/etc/asusd").entryList({"aura_*.ron"},QDir::Files,QDir::Name);if(!files.isEmpty())aura=readFile("/etc/asusd/"+files.first());}
  choice("aura",tr("Keyboard effect"),"Lighting",capture(aura,"current_mode").toLower(),options({{"Static","static"},{"Breathe","breathe"},{"Pulse","pulse"}}),m_asusAvailable&&!aura.isEmpty());
  auto color=add("color",tr("Keyboard colour"),"Lighting","text",activeAuraColour(aura,capture(aura,"current_mode")),m_asusAvailable&&!activeAuraColour(aura,capture(aura,"current_mode")).isEmpty(),{},false,tr("Six hexadecimal digits, e.g. ffd700. Applies a static colour."));list<<color;
  const auto keyboardState=QRegularExpression("zone:\\s*Keyboard\\s*,([^)]*)").match(aura).captured(1);
@@ -245,13 +278,14 @@ void Backend::buildControls(){
   list<<add(id,labels[flag],"Lighting","toggle",capture(keyboardState,flag)=="true",m_asusAvailable&&!keyboardState.isEmpty());
  }
  const QString slash=readFile("/etc/asusd/slash.ron");bool hasSlash=m_asusAvailable&&!slash.isEmpty();
+ if(!slash.isEmpty()){  // only models with a Slash bar get these rows
  list<<add("slash",tr("Slash lighting"),"Lighting","toggle",capture(slash,"enabled")=="true",hasSlash);
  numeric("slashBrightness",tr("Slash brightness"),"Lighting",capture(slash,"brightness").toInt(),0,255,"",hasSlash);
  numeric("slashInterval",tr("Slash animation interval"),"Lighting",capture(slash,"display_interval").toInt(),0,5,"",hasSlash);
  list<<add("slashBatteryWarning",tr("Slash low battery warning"),"Lighting","toggle",capture(slash,"show_battery_warning")=="true",hasSlash);
  choice("slashMode",tr("Slash animation"),"Lighting",capture(slash,"display_mode").toLower(),options({{"Static","static"},{"Bounce","bounce"},{"Slash","slash"},{"Loading","loading"},{"Bit stream","bitstream"},{"Transmission","transmission"},{"Flow","flow"},{"Flux","flux"},{"Phantom","phantom"},{"Spectrum","spectrum"},{"Hazard","hazard"},{"Interfacing","interfacing"},{"Ramp","ramp"},{"Game over","gameover"},{"Start","start"},{"Buzzer","buzzer"}}),hasSlash);
  for(auto pair:QList<QPair<QString,QString>>{{"slashBattery","show_on_battery"},{"slashBoot","show_on_boot"},{"slashSleep","show_on_sleep"},{"slashShutdown","show_on_shutdown"}}){auto labels=QMap<QString,QString>{{"slashBattery",tr("Slash on battery")},{"slashBoot",tr("Slash at boot")},{"slashSleep",tr("Slash during sleep")},{"slashShutdown",tr("Slash at shutdown")}};list<<add(pair.first,labels[pair.first],"Lighting","toggle",capture(slash,pair.second)=="true",hasSlash);}
- list<<add("anime",tr("AniMe Matrix"),"Lighting","action",true,false,tr("This model has Slash lighting, not an AniMe Matrix panel."));
+ }
  list<<add("bootSound",tr("Boot sound"),"System","toggle",armoury("boot_sound")=="1",!armoury("boot_sound").isEmpty());
  list<<add("lock",tr("Lock screen"),"System","action",true);
  list<<add("sleep",tr("Suspend"),"System","action",true,true,{},true,tr("The laptop will sleep. Save work first."));
@@ -274,10 +308,10 @@ void Backend::setControl(const QString&id,const QVariant&value){
  else if(id=="batteryProfile"||id=="acProfile"||id=="refreshMode"){
   if(!savePolicy(id,value)){setMessage(tr("Unable to save automation policy."));return;}
   if(id!="refreshMode")asus({"profile","set",id=="batteryProfile"?"-b":"-a",v=="power-saver"?"Quiet":v=="balanced"?"Balanced":"Performance"});
-  cmds.append(Command{"systemctl",{"--user","restart","laptop-refresh.service"}});
+  cmds.append(Command{"systemctl",{"--user","restart","rog-companion-policy.service"}});
  } else if(id=="charge")asus({"battery","limit",QString::number(value.toInt())});
  else if(id=="oneshot")asus({"battery","oneshot","100"});
- else if(id=="boost")cmds.append(Command{"pkexec",{"/usr/lib/zephyr/zephyr-power-helper","boost",value.toBool()?"1":"0"}});
+ else if(id=="boost")cmds.append(Command{"pkexec",{"/usr/lib/rog-companion/rog-companion-power-helper","boost",value.toBool()?"1":"0"}});
  else if(id=="gpu"){
   if(v=="ultimate"){asus({"armoury","set","dgpu_disable","0"});asus({"armoury","set","gpu_mux_mode","0"});}
   else{asus({"armoury","set","gpu_mux_mode","1"});asus({"armoury","set","dgpu_disable",v=="integrated"?"1":"0"});}deferred=true;
@@ -302,7 +336,7 @@ void Backend::setControl(const QString&id,const QVariant&value){
  else if(id=="slashMode")asus({"slash","set","--mode",v});
  else if(id.startsWith("slash")){const QMap<QString,QString> flags{{"slashBattery","-b"},{"slashBoot","-B"},{"slashSleep","-s"},{"slashShutdown","-S"},{"slashBatteryWarning","-w"}};if(!flags.contains(id))return;asus({"slash","set",flags[id],value.toBool()?"true":"false"});}
  else if(id=="bootSound")asus({"armoury","set","boot_sound",value.toBool()?"1":"0"});
- else if(id=="lock")cmds.append(Command{"omarchy",{"system","lock"}});
+ else if(id=="lock"){if(!QStandardPaths::findExecutable("omarchy").isEmpty())cmds.append(Command{"omarchy",{"system","lock"}});else cmds.append(Command{"loginctl",{"lock-session"}});}
  else if(id=="sleep")cmds.append(Command{"systemctl",{"suspend"}});
  else if(id=="reboot")cmds.append(Command{"systemctl",{"reboot"}});
  else if(id=="shutdown")cmds.append(Command{"systemctl",{"poweroff"}});

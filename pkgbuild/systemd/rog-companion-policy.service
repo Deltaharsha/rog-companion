@@ -1,0 +1,12 @@
+[Unit]
+Description=ROG Companion power and refresh-rate policy
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/rog-companion/rog-companion-policy
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

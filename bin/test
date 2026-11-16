@@ -5,8 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$ROOT/build/tests"
 cd "$ROOT/build/tests"
 
-qmake6 "$ROOT/tests/zephyr_tests.pro"
+qmake6 "$ROOT/tests/rog_companion_tests.pro"
 make -j4
-QT_QPA_PLATFORM=offscreen ./zephyr_tests
+QT_QPA_PLATFORM=offscreen ./rog_companion_tests
 
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"

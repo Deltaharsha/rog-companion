@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
 import QtQuick.Controls
-import "../../src" as Zephyr
+import "../../src" as App
 Item {
     QtObject {
         id: backend
@@ -23,10 +23,10 @@ Item {
         function setControl(id, value) { calls.push({id:id, value:value}) }
         property var calls: []
     }
-    property var panel: Zephyr.Main { visible: true }
+    property var panel: App.Main { visible: true }
     Component.onCompleted: panel.expanded = true
     TestCase {
-        name: "ZephyrPanel"
+        name: "RogCompanionPanel"
         when: windowShown
         function locate(name) {
             function visual(item) {

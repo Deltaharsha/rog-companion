@@ -21,11 +21,11 @@ int main(int argc,char **argv){
  QStringList args;for(int i=1;i<argc;++i)args<<QString::fromLocal8Bit(argv[i]);
  const bool shot=args.contains("--screenshot"),status=args.contains("status"),apply=args.value(0)=="set";
  if(shot||status||apply){qputenv("QT_QPA_PLATFORM","offscreen");qputenv("QT_QPA_PLATFORMTHEME","generic");}
- QGuiApplication app(argc,argv);app.setApplicationName("zephyr");app.setApplicationVersion("0.1.0");app.setDesktopFileName("zephyr");
+ QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");app.setDesktopFileName("rog-companion");
  QQuickStyle::setStyle("Material");
  Backend backend;
  if(apply){
-  if(args.size()<3){QTextStream(stderr)<<"Usage: zephyr set CONTROL VALUE --json\n";return 1;}
+  if(args.size()<3){QTextStream(stderr)<<"Usage: rog-companion set CONTROL VALUE --json\n";return 1;}
   QTimer::singleShot(1200,&app,[&]{
    QVariant value=args[2];if(args[2]=="true")value=true;else if(args[2]=="false")value=false;
    backend.setControl(args[1],value);
@@ -34,16 +34,16 @@ int main(int argc,char **argv){
   });return app.exec();
  }
  if(status){QTimer::singleShot(1200,&app,[&]{auto s=backend.state();QTextStream(stdout)<<QJsonDocument(QJsonObject::fromVariantMap(s)).toJson();app.quit();});return app.exec();}
- const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/zephyr-control";
+ const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/rog-companion-control";
  QLockFile lock(ipcPath+".lock");lock.setStaleLockTime(0);
- if(!shot&&!lock.tryLock()){QLocalSocket socket;socket.connectToServer(ipcPath);if(socket.waitForConnected(1000)){socket.write("open");socket.waitForBytesWritten(1000);return 0;}QTextStream(stderr)<<"Zephyr is running but its control socket is unavailable.\n";return 1;}
+ if(!shot&&!lock.tryLock()){QLocalSocket socket;socket.connectToServer(ipcPath);if(socket.waitForConnected(1000)){socket.write("open");socket.waitForBytesWritten(1000);return 0;}QTextStream(stderr)<<"ROG Companion is running but its control socket is unavailable.\n";return 1;}
  Theme theme;Translator translator(args.contains("--language-test")?args.value(args.indexOf("--language-test")+1):QString());app.installTranslator(&translator);
  QQmlApplicationEngine engine;QObject::connect(&translator,&Translator::changed,&engine,&QQmlEngine::retranslate);
  engine.rootContext()->setContextProperty("backend",&backend);engine.rootContext()->setContextProperty("theme",&theme);engine.rootContext()->setContextProperty("translator",&translator);
  engine.load(QUrl("qrc:/Main.qml"));if(engine.rootObjects().isEmpty())return 1;
  auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());if(!window)return 1;backend.attachWindow(window);
  if(QGuiApplication::platformName()=="wayland"){
-  auto*layer=LayerShellQt::Window::get(window);layer->setScope("zephyr");layer->setLayer(LayerShellQt::Window::LayerBottom);
+  auto*layer=LayerShellQt::Window::get(window);layer->setScope("rog-companion");layer->setLayer(LayerShellQt::Window::LayerBottom);
   layer->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorRight)|LayerShellQt::Window::AnchorBottom);layer->setMargins(QMargins(18,42,18,18));layer->setExclusiveZone(0);
   layer->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityOnDemand);layer->setActivateOnShow(false);
   for(auto*screen:app.screens())if(screen->name().startsWith("eDP")){layer->setScreen(screen);window->setScreen(screen);break;}
@@ -52,6 +52,7 @@ int main(int argc,char **argv){
  if(!shot){QLocalServer::removeServer(ipcPath);server.setSocketOptions(QLocalServer::UserAccessOption);server.listen(ipcPath);
  QObject::connect(&server,&QLocalServer::newConnection,&app,[&]{auto*client=server.nextPendingConnection();QObject::connect(client,&QLocalSocket::readyRead,&app,[&,client]{client->readAll();window->setProperty("expanded",true);backend.raisePanel(true);client->disconnectFromServer();});QObject::connect(client,&QLocalSocket::disconnected,client,&QObject::deleteLater);});}
  window->show();
- if(shot){int i=args.indexOf("--screenshot");QString path=args.value(i+1,"/tmp/zephyr.png");QTimer::singleShot(2200,&app,[&,path]{bool ok=window->grabWindow().save(path);QTextStream(stdout)<<(ok?"Saved ":"Failed ")<<path<<"\n";app.exit(ok?0:1);});}
+ if(shot&&args.contains("--expanded"))window->setProperty("expanded",true);  // README screenshot of the controls
+ if(shot){int i=args.indexOf("--screenshot");QString path=args.value(i+1,"/tmp/rog-companion.png");QTimer::singleShot(2200,&app,[&,path]{bool ok=window->grabWindow().save(path);QTextStream(stdout)<<(ok?"Saved ":"Failed ")<<path<<"\n";app.exit(ok?0:1);});}
  return app.exec();
 }

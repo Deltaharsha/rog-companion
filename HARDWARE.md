@@ -1,10 +1,10 @@
-# Zephyrus hardware contract
+# Hardware notes (tested model)
 
 Audited 2026-11-16 on ROG Zephyrus G14 GA403UP / GA403UP_GA403UP, asusctl/asusd 6.5.0. These are observed host capabilities; write forms below come from installed CLI help and were not exercised except the keyboard power probe noted at the end.
 
 ## Process contract
 
-Use QProcess argument lists (no shell). `asusctl` writes logs and human output to stdout and can **exit 0 even when D-Bus connection fails**. Check output/errors and re-read the affected value; exit status alone is insufficient. In the Codex sandbox system D-Bus access needs escalation, while normal desktop apps should use the system bus directly. Do not use sudo in the app.
+Use QProcess argument lists (no shell). `asusctl` writes logs and human output to stdout and can **exit 0 even when D-Bus connection fails**. Check output/errors and re-read the affected value; exit status alone is insufficient. Desktop apps use the system bus directly. Do not use sudo in the app.
 
 | Feature | Read | Write contract / values |
 |---|---|---|
@@ -51,6 +51,6 @@ Discover hwmon directories by `name` every run (indices can change).
 | nvme | temp1/2_input labels Composite/Sensor 1 | millidegrees C |
 | asus_custom_fan_curve | pwmN_auto_pointM_temp/pwm, pwmN_enable | fan N 1=CPU,2=GPU,3=MID; M=1..8; temperatures already Celsius, PWM 0–255. Observed enable 1 for custom CPU, 2 for automatic GPU/MID. Prefer daemon writes. |
 
-NVIDIA `nvidia-smi` currently fails to communicate with the NVIDIA driver. Treat dGPU telemetry as unavailable, never zero or AMD readings. `/sys/class/power_supply/BAT1/` supplies capacity (percent), status, current_now (microamps), voltage_now (microvolts), charge_now/full/full_design (microamp-hours), cycle_count, and charge_control_end_threshold. Compute battery watts as current_now × voltage_now / 1e12, using status for charge/discharge direction; this battery does not provide power_now or energy_now. `/sys/class/power_supply/ACAD/online` is AC state. `/sys/class/rfkill/*/{type,hard,soft}` exposes wlan/bluetooth blocks even though `/dev/rfkill` is unavailable inside the execution sandbox.
+NVIDIA `nvidia-smi` currently fails to communicate with the NVIDIA driver. Treat dGPU telemetry as unavailable, never zero or AMD readings. `/sys/class/power_supply/BAT1/` supplies capacity (percent), status, current_now (microamps), voltage_now (microvolts), charge_now/full/full_design (microamp-hours), cycle_count, and charge_control_end_threshold. Compute battery watts as current_now × voltage_now / 1e12, using status for charge/discharge direction; this battery does not provide power_now or energy_now. `/sys/class/power_supply/ACAD/online` is AC state. `/sys/class/rfkill/*/{type,hard,soft}` exposes wlan/bluetooth blocks.
 
 Audit correction: a bare `asusctl aura power keyboard` probe temporarily cleared four LED flags. They were immediately restored using all four flags and D-Bus confirmed exactly the original true/true/true/true state. No other setting writes were exercised.

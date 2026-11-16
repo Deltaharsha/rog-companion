@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=ROG Companion
+Comment=Control ASUS ROG laptop power, fans, battery and lighting
+Comment[da]=Styr strøm, blæsere, batteri og lys på ASUS ROG-bærbare
+GenericName=Laptop control panel
+GenericName[da]=Kontrolpanel til bærbar
+Keywords=asus;rog;zephyrus;strix;tuf;fan;battery;charge;gpu;mux;aura;keyboard;performance;g-helper;armoury;
+Exec=rog-companion
+Icon=rog-companion
+Terminal=false
+Categories=Settings;HardwareSettings;
+StartupWMClass=rog-companion

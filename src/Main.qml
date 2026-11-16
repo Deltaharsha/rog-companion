@@ -5,14 +5,14 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
-    objectName: "zephyrWindow"
+    objectName: "rogCompanionWindow"
     visible: false
     width: 360
     height: expanded ? Math.min(760, Screen.height - 48) : 560
     minimumWidth: 360
     maximumWidth: 360
     minimumHeight: 500
-    title: "ZEPHYR"
+    title: "ROG Companion"
     color: "#121416"
     font.family: "sans-serif"
     Material.theme: Material.Dark
@@ -287,13 +287,13 @@ ApplicationWindow {
                     implicitWidth: 29; implicitHeight: 29
                     color: window.accentColor
                     radius: Math.min(4, window.cornerRadius)
-                    PlainLabel { anchors.centerIn: parent; text: "Z"; color: window.accentInk; font.weight: Font.Black; font.pixelSize: 19; font.italic: true }
+                    PlainLabel { anchors.centerIn: parent; text: "R"; color: window.accentInk; font.weight: Font.Black; font.pixelSize: 19; font.italic: true }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 1
-                    PlainLabel { text: "ZEPHYR"; font.pixelSize: 16; font.weight: Font.Bold; font.letterSpacing: 3 }
-                    PlainLabel { text: window.telemetry.model || qsTr("ROG Zephyrus"); color: window.muted; font.pixelSize: 10; Layout.fillWidth: true }
+                    PlainLabel { text: "ROG COMPANION"; font.pixelSize: 16; font.weight: Font.Bold; font.letterSpacing: 3 }
+                    PlainLabel { text: window.telemetry.model || qsTr("ASUS laptop"); color: window.muted; font.pixelSize: 10; Layout.fillWidth: true }
                 }
                 SmallButton { objectName: "helpButton"; text: "?"; implicitWidth: 30; leftPadding: 0; rightPadding: 0; onClicked: help.open(); Accessible.name: qsTr("Keyboard shortcuts") }
                 SmallButton { objectName: "refreshButton"; text: "↻"; implicitWidth: 30; leftPadding: 0; rightPadding: 0; enabled: !backend.busy; onClicked: backend.refresh(); Accessible.name: qsTr("Refresh hardware status") }
@@ -497,7 +497,7 @@ ApplicationWindow {
         contentItem: ColumnLayout {
             spacing: 16
             Repeater {
-                model: [{ key: "Space", label: qsTr("Refresh hardware status") }, { key: "Esc", label: qsTr("Close controls") }, { key: "?", label: qsTr("Show shortcuts") }, { key: "Q", label: qsTr("Quit ZEPHYR") }]
+                model: [{ key: "Space", label: qsTr("Refresh hardware status") }, { key: "Esc", label: qsTr("Close controls") }, { key: "?", label: qsTr("Show shortcuts") }, { key: "Q", label: qsTr("Quit ROG Companion") }]
                 delegate: RowLayout {
                     required property var modelData
                     Layout.fillWidth: true

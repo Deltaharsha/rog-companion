@@ -1,0 +1,12 @@
+[Unit]
+Description=ROG Companion desktop panel
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/rog-companion
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

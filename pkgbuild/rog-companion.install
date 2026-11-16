@@ -1,0 +1,9 @@
+post_install() {
+  echo ">> Start ROG Companion now and at every login with:"
+  echo "     systemctl --user enable --now rog-companion.service rog-companion-policy.service"
+}
+
+post_upgrade() {
+  echo ">> Restart ROG Companion to use the new version:"
+  echo "     systemctl --user restart rog-companion.service rog-companion-policy.service"
+}

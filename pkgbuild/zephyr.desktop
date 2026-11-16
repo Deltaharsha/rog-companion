@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Zephyr Control
-Comment=Control ASUS laptop power and performance settings
-Exec=zephyr
-Icon=zephyr
-Terminal=false
-Categories=Settings;HardwareSettings;
-StartupWMClass=zephyr

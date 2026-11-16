@@ -1,0 +1,111 @@
+#!/usr/bin/python
+"""ROG Companion's background policy: pick the power profile and the laptop
+panel's refresh rate from the power source, as chosen in the panel.
+
+Runs as the systemd user service rog-companion-policy.service.
+"""
+import json
+import subprocess
+from pathlib import Path
+from gi.repository import Gio, GLib
+
+STATE = Path.home() / ".local/state/rog-companion/policy.json"
+OLD_STATE = Path.home() / ".local/state/zephyr/policy.json"  # earlier releases were called Zephyr
+
+last_battery = None
+last_policy = None
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+
+
+def property_value(service, path, interface, name):
+    return bus.call_sync(service, path, "org.freedesktop.DBus.Properties", "Get",
+                         GLib.Variant("(ss)", (interface, name)), GLib.VariantType("(v)"),
+                         Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+
+
+def load_policy():
+    for path in (STATE, OLD_STATE):
+        try:
+            data = json.loads(path.read_text())
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def panel_rates(panel):
+    """Refresh rates the panel offers at its current resolution, lowest first."""
+    prefix = f"{panel['width']}x{panel['height']}@"
+    rates = set()
+    for mode in panel.get("availableModes", []):
+        if mode.startswith(prefix):
+            try:
+                rates.add(float(mode[len(prefix):].removesuffix("Hz")))
+            except ValueError:
+                pass
+    return sorted(rates)
+
+
+def set_panel_rate(panel, rate):
+    # Lua configs (Hyprland 0.55+) take hl.monitor via eval; classic configs take a keyword.
+    code = ('hl.monitor({ output = %s, mode = "%dx%d@%.2f", position = "%dx%d", '
+            'scale = %s, transform = %d })') % (
+        json.dumps(panel["name"]), panel["width"], panel["height"], rate,
+        panel["x"], panel["y"], panel["scale"], panel["transform"])
+    if subprocess.run(["hyprctl", "eval", code], capture_output=True, timeout=5).returncode == 0:
+        return
+    keyword = "%s,%dx%d@%.2f,%dx%d,%s,transform,%d" % (
+        panel["name"], panel["width"], panel["height"], rate,
+        panel["x"], panel["y"], panel["scale"], panel["transform"])
+    subprocess.run(["hyprctl", "keyword", "monitor", keyword], check=True, timeout=5)
+
+
+def update(*_args):
+    global last_battery, last_policy
+    try:
+        battery = property_value("org.freedesktop.UPower", "/org/freedesktop/UPower",
+                                 "org.freedesktop.UPower", "OnBattery")
+        policy = load_policy()
+        desired = policy.get("batteryProfile" if battery else "acProfile",
+                             "power-saver" if battery else "performance")
+        if desired not in ("power-saver", "balanced", "performance"):
+            raise ValueError("Unsupported power profile")
+        if battery != last_battery or policy != last_policy:
+            profile = property_value("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles",
+                                     "net.hadess.PowerProfiles", "ActiveProfile")
+            if desired != profile:
+                subprocess.run(["powerprofilesctl", "set", desired], check=True, timeout=5)
+                print(f"Power policy applied: {desired}", flush=True)
+            last_battery, last_policy = battery, policy
+
+        mode = str(policy.get("refreshMode", "auto"))
+        if mode != "auto" and not mode.isdigit():
+            raise ValueError("Unsupported display refresh policy")
+        monitors = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"], text=True, timeout=5))
+        panel = next((m for m in monitors if m["name"].startswith("eDP-")), None)
+        if not panel:
+            return GLib.SOURCE_CONTINUE  # lid closed or no built-in panel: nothing to do
+        rates = panel_rates(panel)
+        if not rates:
+            return GLib.SOURCE_CONTINUE
+        if mode == "auto":
+            rate = rates[0] if battery else rates[-1]
+        else:
+            rate = min(rates, key=lambda r: abs(r - int(mode)))
+        if abs(panel["refreshRate"] - rate) > 0.5:
+            set_panel_rate(panel, rate)
+            print(f"Laptop display set to {rate:g} Hz", flush=True)
+    except (GLib.Error, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        print(f"Power/display update deferred: {error}", flush=True)
+    return GLib.SOURCE_CONTINUE
+
+
+for service, path in (("org.freedesktop.UPower", "/org/freedesktop/UPower"),
+                      ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")):
+    bus.signal_subscribe(service, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                         path, None, Gio.DBusSignalFlags.NONE, update)
+GLib.timeout_add_seconds(30, update)
+update()
+GLib.MainLoop().run()

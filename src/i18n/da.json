@@ -11,7 +11,7 @@
   "On": "Til",
   "Off": "Fra",
   "Run": "Kør",
-  "ROG Zephyrus": "ROG Zephyrus",
+  "ASUS laptop": "ASUS-bærbar",
   "Keyboard shortcuts": "Tastaturgenveje",
   "Refresh hardware status": "Opdater hardwarestatus",
   "UPDATING": "OPDATERER",
@@ -35,5 +35,5 @@
   "This change may interrupt your current session.": "Denne ændring kan afbryde din aktuelle session.",
   "Close controls": "Luk indstillinger",
   "Show shortcuts": "Vis genveje",
-  "Quit ZEPHYR": "Afslut ZEPHYR"
+  "Quit ROG Companion": "Afslut ROG Companion"
 }

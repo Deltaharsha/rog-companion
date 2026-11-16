@@ -1,10 +1,19 @@
 #!/bin/sh
+# Build and install this working copy as a package, the same way the AUR would:
+# makepkg gets a tarball of the current tree in place of the GitHub release.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-"$ROOT/bin/build"
-cd "$ROOT/pkgbuild"
+VERSION="$(sed -n 's/^pkgver=//p' "$ROOT/pkgbuild/PKGBUILD")"
+WORK="$ROOT/build/package"
+rm -rf "$WORK" && mkdir -p "$WORK"
+cp "$ROOT/pkgbuild/PKGBUILD" "$ROOT/pkgbuild/rog-companion.install" "$WORK/"
+# Tar the working tree (tracked and new files, minus ignored ones) so uncommitted changes are included.
+cd "$ROOT"
+git ls-files -co --exclude-standard -z | tar --null -T - --transform "s,^,rog-companion-$VERSION/," \
+    -czf "$WORK/rog-companion-$VERSION.tar.gz"
+cd "$WORK"
 makepkg -f --noconfirm "$@"
-PACKAGE="$(find "$ROOT/pkgbuild" -maxdepth 1 -type f -name 'zephyr-[0-9]*.pkg.tar.zst' -print -quit)"
+PACKAGE="$(find "$WORK" -maxdepth 1 -type f -name "rog-companion-$VERSION-*-x86_64.pkg.tar.zst" ! -name '*debug*' -print -quit)"
 test -n "$PACKAGE"
 exec pkexec pacman -U --noconfirm "$PACKAGE"

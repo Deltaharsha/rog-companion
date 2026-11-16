@@ -5,9 +5,10 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$ROOT/build"
 cd "$ROOT/build"
 
-qmake6 "$ROOT/zephyr.pro"
+qmake6 "$ROOT/rog-companion.pro"
 make -j4
 
-c++ -std=c++17 -O2 "$ROOT/src/power-helper.cpp" -o "$ROOT/build/zephyr-power-helper"
+# Runs as root via pkexec, so build it with the distribution's hardening flags when packaging.
+${CXX:-c++} ${CXXFLAGS:-} -std=c++17 -O2 "$ROOT/src/power-helper.cpp" -o "$ROOT/build/rog-companion-power-helper" ${LDFLAGS:-}
 
-echo "Built $ROOT/build/zephyr"
+echo "Built $ROOT/build/rog-companion"
