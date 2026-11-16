@@ -31,7 +31,7 @@ ROG Companion talks to [`asusctl`/`asusd`](https://asus-linux.org), so it suppor
 | Model | Status |
 |---|---|
 | ROG Zephyrus G14 (GA403UP, 2024) | ✅ Tested daily |
-| Other ROG Zephyrus / Strix / Flow / TUF | 🧪 Should work. [Tell us how it goes!](https://github.com/Deltaharsha/rog-companion/issues/new?title=Tested+on+MODEL&body=Model:%0A%0AWhat+worked:%0A%0AWhat+didn't:%0A%0AOutput+of+%60rog-companion+status%60:%0A) |
+| Other ROG Zephyrus / Strix / Flow / TUF | 🧪 Should work. [Tell us how it goes!](https://github.com/Deltaharsha/rog-companion/issues/new?title=Tested+on+MODEL&body=Model:%0A%0AWhat+worked:%0A%0AWhat+didn't:%0A%0AOutput+of+%60rog-companion+status%60+and+%60rog-companion+controls%60:%0A) |
 
 ## Install
 
@@ -68,6 +68,7 @@ From a terminal or script:
 
 ```sh
 rog-companion status            # all readings as JSON
+rog-companion controls          # every control, and why any are unavailable on your model
 rog-companion set charge 80     # change a setting; prints JSON, exits 0 or 1
 ```
 

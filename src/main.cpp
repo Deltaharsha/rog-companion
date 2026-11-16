@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QTextStream>
 #include <LayerShellQt/window.h>
 #include "backend.h"
@@ -19,8 +20,8 @@
 #include "translator.h"
 int main(int argc,char **argv){
  QStringList args;for(int i=1;i<argc;++i)args<<QString::fromLocal8Bit(argv[i]);
- const bool shot=args.contains("--screenshot"),status=args.contains("status"),apply=args.value(0)=="set";
- if(shot||status||apply){qputenv("QT_QPA_PLATFORM","offscreen");qputenv("QT_QPA_PLATFORMTHEME","generic");}
+ const bool shot=args.contains("--screenshot"),status=args.contains("status"),apply=args.value(0)=="set",listControls=args.value(0)=="controls";
+ if(shot||status||apply||listControls){qputenv("QT_QPA_PLATFORM","offscreen");qputenv("QT_QPA_PLATFORMTHEME","generic");}
  QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");app.setDesktopFileName("rog-companion");
  QQuickStyle::setStyle("Material");
  Backend backend;
@@ -30,9 +31,14 @@ int main(int argc,char **argv){
    QVariant value=args[2];if(args[2]=="true")value=true;else if(args[2]=="false")value=false;
    backend.setControl(args[1],value);
    auto *poll=new QTimer(&app);poll->setInterval(100);
-   QObject::connect(poll,&QTimer::timeout,&app,[&]{if(!backend.busy()){auto msg=backend.message();bool ok=msg.startsWith("Verified")||msg.startsWith("Command accepted")||msg.startsWith("Graphics request");QTextStream(stdout)<<QJsonDocument(QJsonObject{{"ok",ok},{"message",msg},{"state",QJsonObject::fromVariantMap(backend.state())}}).toJson();app.exit(ok?0:1);}});poll->start();
+   QObject::connect(poll,&QTimer::timeout,&app,[&]{auto msg=backend.message();if(!backend.busy()&&!msg.startsWith("Checking")){bool ok=msg.startsWith("Verified")||msg.startsWith("Command accepted")||msg.startsWith("Graphics request");QTextStream(stdout)<<QJsonDocument(QJsonObject{{"ok",ok},{"message",msg},{"state",QJsonObject::fromVariantMap(backend.state())}}).toJson();app.exit(ok?0:1);}});poll->start();
   });return app.exec();
  }
+ // Every control with whether it's available here and why not: what testers paste into bug reports.
+ if(listControls){QTimer::singleShot(1500,&app,[&]{QJsonArray out;
+  for(const auto &v:backend.controls()){const auto c=v.toMap();QJsonObject o{{"id",c["id"].toString()},{"label",c["label"].toString()},{"group",c["group"].toString()},{"available",c["available"].toBool()},{"value",QJsonValue::fromVariant(c["value"])}};
+   if(!c["available"].toBool())o["reason"]=c["reason"].toString();out<<o;}
+  QTextStream(stdout)<<QJsonDocument(out).toJson();app.quit();});return app.exec();}
  if(status){QTimer::singleShot(1200,&app,[&]{auto s=backend.state();QTextStream(stdout)<<QJsonDocument(QJsonObject::fromVariantMap(s)).toJson();app.quit();});return app.exec();}
  const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/rog-companion-control";
  QLockFile lock(ipcPath+".lock");lock.setStaleLockTime(0);

@@ -246,9 +246,9 @@ void Backend::buildControls(){
   if(!QFileInfo::exists(fw+attr))continue;  // this model has no such limit: don't show it at all
   // Limits are shown read-only: writing power limits is left to firmware tools until it's tested per model.
   const auto value=number(fw+attr+"/current_value"),low=number(fw+attr+"/min_value"),high=number(fw+attr+"/max_value");
-  auto c=add("limit_"+attr,labels[attr],"Power","number",value,false,value.isValid()
-     ?tr("Shown for reference. ROG Companion doesn't change firmware power limits yet.")
-     :tr("Your firmware lists this limit but doesn't report a value."));
+  if(!value.isValid())continue;  // listed by firmware but unreadable (e.g. the GA403UP): nothing useful to show
+  auto c=add("limit_"+attr,labels[attr],"Power","number",value,false,
+     tr("Shown for reference. ROG Companion doesn't change firmware power limits yet."));
   c["min"]=low.isValid()?low.toInt():0;c["max"]=high.isValid()?high.toInt():qMax(100,value.toInt());c["step"]=1;c["unit"]=attr=="nv_temp_target"?"°C":"W";list<<c;
  }
  for(const auto&fan:QStringList{"cpu","gpu","mid"}){
