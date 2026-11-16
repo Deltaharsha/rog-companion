@@ -35,12 +35,16 @@ ROG Companion talks to [`asusctl`/`asusd`](https://asus-linux.org), so it suppor
 
 ## Install
 
-### Arch / Omarchy (AUR)
+### Arch / Omarchy
+
+Install the ready-built package from the [latest release](https://github.com/Deltaharsha/rog-companion/releases/latest). Pacman pulls in everything it needs from the official repos:
 
 ```sh
-yay -S rog-companion
+sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.2.0/rog-companion-0.2.0-1-x86_64.pkg.tar.zst
 systemctl --user enable --now rog-companion.service rog-companion-policy.service
 ```
+
+Each release lists the package's SHA-256 checksum next to it. An AUR package is coming.
 
 ### From source
 
