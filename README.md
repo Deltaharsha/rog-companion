@@ -61,8 +61,12 @@ systemctl --user enable --now rog-companion.service rog-companion-policy.service
 
 The panel starts at login and sits in the bottom-right corner. Click **Open controls**, or launch **ROG Companion** from your app launcher to bring it forward.
 
+Safe settings (profile, lighting, brightness, toggles) apply the moment you touch them. Anything that can interrupt you, like GPU mode, fan curves, charging to 100% or restarting, asks first.
+
 | Key | Action |
 |---|---|
+| C | Open or close controls |
+| 1–4 | Switch section |
 | Space | Refresh |
 | Escape | Close controls |
 | ? | Show shortcuts |
@@ -78,7 +82,7 @@ rog-companion set charge 80     # change a setting; prints JSON, exits 0 or 1
 
 ## Good to know
 
-- **Settings change only when you press Apply.** Opening the panel never writes to your hardware.
+- **Opening the panel never writes to your hardware.** Only touching a control does.
 - **GPU mode changes need a reboot.** The panel shows what's queued separately from what's active.
 - **Fan curves** need eight points with rising temperatures, ending at 100% speed.
 - **Firmware power limits** are shown for reference when your laptop reports them. Changing them isn't supported yet.
@@ -100,4 +104,4 @@ ROG Companion is free and open source. If it saves you from booting into Windows
 
 ## License
 
-MIT
+MIT. The bundled [Inter](https://rsms.me/inter/) typeface is under the SIL Open Font License (`src/fonts/Inter-OFL.txt`).

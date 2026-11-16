@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QFontDatabase>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -27,6 +28,11 @@ int main(int argc,char **argv){
  QGuiApplication::setDesktopFileName("rog-companion");
  QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");
  QQuickStyle::setStyle("Material");
+ // Inter ships inside the binary (SIL OFL, see src/fonts/Inter-OFL.txt), so the panel looks the same on every
+ // system. Numbers use the user's own monospace font, which is where the Linux personality comes from.
+ QString uiFont="sans-serif";
+ {const int id=QFontDatabase::addApplicationFont(":/fonts/InterVariable.ttf");
+  if(id>=0&&!QFontDatabase::applicationFontFamilies(id).isEmpty())uiFont=QFontDatabase::applicationFontFamilies(id).first();}
  const bool gui=!shot&&!status&&!apply&&!listControls;
  const QString ipcPath=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)+"/rog-companion-control";
  QLockFile lock(ipcPath+".lock");lock.setStaleLockTime(0);
@@ -50,7 +56,7 @@ int main(int argc,char **argv){
  if(status){QTimer::singleShot(1200,&app,[&]{auto s=backend.state();QTextStream(stdout)<<QJsonDocument(QJsonObject::fromVariantMap(s)).toJson();app.quit();});return app.exec();}
  Theme theme;Translator translator(args.contains("--language-test")?args.value(args.indexOf("--language-test")+1):QString());app.installTranslator(&translator);
  QQmlApplicationEngine engine;QObject::connect(&translator,&Translator::changed,&engine,&QQmlEngine::retranslate);
- engine.rootContext()->setContextProperty("backend",&backend);engine.rootContext()->setContextProperty("theme",&theme);engine.rootContext()->setContextProperty("translator",&translator);
+ engine.rootContext()->setContextProperty("backend",&backend);engine.rootContext()->setContextProperty("theme",&theme);engine.rootContext()->setContextProperty("translator",&translator);engine.rootContext()->setContextProperty("uiFont",uiFont);
  engine.load(QUrl("qrc:/Main.qml"));if(engine.rootObjects().isEmpty())return 1;
  auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());if(!window)return 1;backend.attachWindow(window);
  if(QGuiApplication::platformName()=="wayland"){
@@ -64,6 +70,7 @@ int main(int argc,char **argv){
  QObject::connect(&server,&QLocalServer::newConnection,&app,[&]{auto*client=server.nextPendingConnection();QObject::connect(client,&QLocalSocket::readyRead,&app,[&,client]{client->readAll();window->setProperty("expanded",true);backend.raisePanel(true);client->disconnectFromServer();});QObject::connect(client,&QLocalSocket::disconnected,client,&QObject::deleteLater);});}
  window->show();
  if(shot&&args.contains("--expanded"))window->setProperty("expanded",true);  // README screenshot of the controls
+ if(shot&&args.contains("--tab"))window->setProperty("selectedTab",args.value(args.indexOf("--tab")+1).toInt());
  if(shot){int i=args.indexOf("--screenshot");QString path=args.value(i+1,"/tmp/rog-companion.png");QTimer::singleShot(2200,&app,[&,path]{bool ok=window->grabWindow().save(path);QTextStream(stdout)<<(ok?"Saved ":"Failed ")<<path<<"\n";app.exit(ok?0:1);});}
  return app.exec();
 }

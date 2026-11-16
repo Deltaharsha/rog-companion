@@ -100,6 +100,8 @@ QList<int> Backend::panelRates(){
 Backend::~Backend(){
  m_poll.stop();m_timeout.stop();m_gpuTimeout.stop();
  m_process.disconnect();m_gpuProcess.disconnect();
+ // Stop children ourselves so Qt doesn't warn about destroying a running process.
+ for(QProcess *p:{&m_process,&m_gpuProcess})if(p->state()!=QProcess::NotRunning){p->kill();p->waitForFinished(500);}
 }
 void Backend::setMessage(const QString&s){m_message=s;emit messageChanged();}
 void Backend::execute(const QList<Command>&cmds,std::function<void(bool,QString)>done){
@@ -238,15 +240,15 @@ void Backend::buildControls(){
  auto numeric=[&](QString id,QString label,QString group,QVariant val,int min,int max,QString unit,bool available=true){auto c=add(id,label,group,"number",val,available,available?"":tr("Not exposed by firmware."));c["min"]=min;c["max"]=max;c["step"]=1;c["unit"]=unit;list<<c;};
  QString pp=readFile("/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference");
  QString profile=m_state["profile"].toString();
- choice("profile",tr("Performance mode"),"Power",profile,options({{"Silent","Quiet"},{"Balanced","Balanced"},{"Turbo","Performance"}}),m_asusAvailable,false,tr("Firmware fan and power preset. Battery automation takes over at the next power-source change."));
+ choice("profile",tr("Performance mode"),"Power",profile,options({{tr("Silent"),"Quiet"},{tr("Balanced"),"Balanced"},{tr("Turbo"),"Performance"}}),m_asusAvailable,false,tr("Firmware fan and power preset. Battery automation takes over at the next power-source change."));
  auto pol=policy();
- auto profiles=options({{"Power saver","power-saver"},{"Balanced","balanced"},{"Performance","performance"}});
+ auto profiles=options({{tr("Power saver"),"power-saver"},{tr("Balanced"),"balanced"},{tr("Performance"),"performance"}});
  choice("batteryProfile",tr("When unplugged"),"Power",pol.value("batteryProfile","power-saver"),profiles);
  choice("acProfile",tr("When plugged in"),"Power",pol.value("acProfile","performance"),profiles);
  numeric("charge",tr("Charge ceiling"),"Power",m_state["chargeLimit"],20,100,"%",m_asusAvailable&&m_state["chargeLimit"].isValid());
  list<<add("oneshot",tr("Charge to 100% once"),"Power","action",true,m_asusAvailable,{},true,tr("Temporarily charge fully; ASUS restores the configured ceiling afterward."));
  list<<add("boost",tr("CPU turbo boost"),"Power","toggle",readFile("/sys/devices/system/cpu/cpufreq/boost")=="1",QFileInfo::exists("/sys/devices/system/cpu/cpufreq/boost"),{},true,tr("Requires system authentication. Disabling boost reduces peak performance and heat until reboot."));
- choice("gpu",tr("Graphics mode"),"Power",armoury("gpu_mux_mode")=="0"?"ultimate":armoury("dgpu_disable")=="1"?"integrated":"hybrid",options({{"Hybrid","hybrid"},{"Integrated / Eco","integrated"},{"NVIDIA / Ultimate","ultimate"}}),m_asusAvailable&&!armoury("gpu_mux_mode").isEmpty(),true,tr("Queued by ASUS for reboot. Eco can disable NVIDIA-wired HDMI. Save work before rebooting. Current pending request: %1").arg(m_pendingGpu.isEmpty()?tr("none queued"):m_pendingGpu));
+ choice("gpu",tr("Graphics mode"),"Power",armoury("gpu_mux_mode")=="0"?"ultimate":armoury("dgpu_disable")=="1"?"integrated":"hybrid",options({{tr("Hybrid"),"hybrid"},{tr("Integrated / Eco"),"integrated"},{tr("NVIDIA / Ultimate"),"ultimate"}}),m_asusAvailable&&!armoury("gpu_mux_mode").isEmpty(),true,tr("Queued by ASUS for reboot. Eco can disable NVIDIA-wired HDMI. Save work before rebooting. Current pending request: %1").arg(m_pendingGpu.isEmpty()?tr("none queued"):m_pendingGpu));
  for(const auto&attr:QStringList{"ppt_pl1_spl","ppt_pl2_sppt","ppt_pl3_fppt","nv_tgp","nv_dynamic_boost","nv_temp_target"}){
   const QMap<QString,QString> labels{{"ppt_pl1_spl",tr("CPU sustained power")},{"ppt_pl2_sppt",tr("CPU short boost power")},{"ppt_pl3_fppt",tr("CPU fast boost power")},{"nv_tgp",tr("GPU power limit")},{"nv_dynamic_boost",tr("GPU Dynamic Boost")},{"nv_temp_target",tr("GPU temperature target")}};
   if(!QFileInfo::exists(fw+attr))continue;  // this model has no such limit: don't show it at all
@@ -275,7 +277,7 @@ void Backend::buildControls(){
  numeric("keyboard",tr("Keyboard brightness"),"Lighting",number("/sys/class/leds/asus::kbd_backlight/brightness"),0,3,"",QFileInfo::exists("/sys/class/leds/asus::kbd_backlight"));
  // asusd names the file after the keyboard's USB product id (aura_19b6.ron, aura_1866.ron, …).
  QString aura;{const auto files=QDir("/etc/asusd").entryList({"aura_*.ron"},QDir::Files,QDir::Name);if(!files.isEmpty())aura=readFile("/etc/asusd/"+files.first());}
- choice("aura",tr("Keyboard effect"),"Lighting",capture(aura,"current_mode").toLower(),options({{"Static","static"},{"Breathe","breathe"},{"Pulse","pulse"}}),m_asusAvailable&&!aura.isEmpty());
+ choice("aura",tr("Keyboard effect"),"Lighting",capture(aura,"current_mode").toLower(),options({{tr("Static"),"static"},{tr("Breathe"),"breathe"},{tr("Pulse"),"pulse"}}),m_asusAvailable&&!aura.isEmpty());
  auto color=add("color",tr("Keyboard colour"),"Lighting","text",activeAuraColour(aura,capture(aura,"current_mode")),m_asusAvailable&&!activeAuraColour(aura,capture(aura,"current_mode")).isEmpty(),{},false,tr("Six hexadecimal digits, e.g. ffd700. Applies a static colour."));list<<color;
  const auto keyboardState=QRegularExpression("zone:\\s*Keyboard\\s*,([^)]*)").match(aura).captured(1);
  for(const auto &flag:QStringList{"boot","awake","sleep","shutdown"}) {
