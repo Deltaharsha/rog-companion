@@ -1,0 +1,24 @@
+pkgname=zephyr
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Control ASUS laptop power and performance settings'
+arch=('x86_64')
+license=('MIT')
+depends=('asusctl' 'power-profiles-daemon' 'brightnessctl' 'qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt')
+makedepends=('gcc' 'make')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/zephyr "$pkgdir/usr/bin/zephyr"
+  install -Dm755 build/zephyr-power-helper "$pkgdir/usr/lib/zephyr/zephyr-power-helper"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$startdir/zephyr.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/zephyr.svg"
+  install -Dm644 "$startdir/zephyr.desktop" "$pkgdir/usr/share/applications/zephyr.desktop"
+}

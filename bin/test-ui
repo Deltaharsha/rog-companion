@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+RUNNER="$(command -v qmltestrunner6 || command -v qmltestrunner || true)"
+if [ -z "$RUNNER" ] && [ -x /usr/lib/qt6/bin/qmltestrunner ]; then
+    RUNNER=/usr/lib/qt6/bin/qmltestrunner
+fi
+if [ -z "$RUNNER" ]; then
+    echo "Qt 6 qmltestrunner is required (qt6-declarative)." >&2
+    exit 1
+fi
+QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=basic \
+    QT_QUICK_CONTROLS_STYLE=Material QT_QUICK_BACKEND=software \
+    "$RUNNER" -input "$ROOT/tests/qml" "$@"

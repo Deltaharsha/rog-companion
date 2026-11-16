@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build"
+cd "$ROOT/build"
+
+qmake6 "$ROOT/zephyr.pro"
+make -j4
+
+c++ -std=c++17 -O2 "$ROOT/src/power-helper.cpp" -o "$ROOT/build/zephyr-power-helper"
+
+echo "Built $ROOT/build/zephyr"

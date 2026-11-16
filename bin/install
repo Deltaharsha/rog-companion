@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+cd "$ROOT/pkgbuild"
+makepkg -f --noconfirm "$@"
+PACKAGE="$(find "$ROOT/pkgbuild" -maxdepth 1 -type f -name 'zephyr-[0-9]*.pkg.tar.zst' -print -quit)"
+test -n "$PACKAGE"
+exec pkexec pacman -U --noconfirm "$PACKAGE"
