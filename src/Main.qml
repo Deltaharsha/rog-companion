@@ -128,6 +128,11 @@ ApplicationWindow {
     function destructive(control) {
         return control && /^(reboot|shutdown|fan_default)$/.test(control.id)
     }
+    // Used by `--screenshot --dialog NAME` to capture the dialogs for the README.
+    function showDialog(name) {
+        if (name === "help") help.open()
+        else if (name === "confirm") { pendingControl = control("reboot") || control("gpu"); pendingValue = true; confirmation.open() }
+    }
     function activeFocusItemIsEditor() {
         const item = activeFocusItem
         return item && (item instanceof TextInput || item instanceof TextEdit)
@@ -423,7 +428,9 @@ ApplicationWindow {
                     enabled: row.available && !backend.busy
                     focusPolicy: Qt.StrongFocus
                     implicitHeight: 30
-                    implicitWidth: Math.min(170, menuText.implicitWidth + 30)
+                    // The title keeps priority: values are short, and long ones elide instead.
+                    implicitWidth: Math.min(150, menuText.implicitWidth + 30)
+                    Layout.maximumWidth: 150
                     property alias menu: optionsMenu
                     onClicked: optionsMenu.open()
                     contentItem: Txt {
@@ -436,6 +443,7 @@ ApplicationWindow {
                         color: window.secondary
                         horizontalAlignment: Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideLeft
                     }
                     background: Rectangle { radius: window.rControl; color: menuButton.hovered ? "#12ffffff" : "transparent"; border.color: menuButton.activeFocus ? window.accent : "transparent" }
                     Menu {

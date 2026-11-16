@@ -269,10 +269,13 @@ void Backend::buildControls(){
  double max=readFile(bl.filePath(m_backlight)+"/max_brightness").toDouble();numeric("brightness",tr("Display brightness"),"System",max>0?100*readFile(bl.filePath(m_backlight)+"/brightness").toDouble()/max:0,5,100,"%",!m_backlight.isEmpty());
  {
   QVariantList rates;
-  if(m_panelRates.size()>1)rates<<QVariantMap{{"label",tr("Auto · %1 Hz on battery, %2 Hz plugged in").arg(m_panelRates.first()).arg(m_panelRates.last())},{"value","auto"}};
+  if(m_panelRates.size()>1)rates<<QVariantMap{{"label",tr("Auto · %1/%2 Hz").arg(m_panelRates.first()).arg(m_panelRates.last())},{"value","auto"}};
   else rates<<QVariantMap{{"label",tr("Auto")},{"value","auto"}};
   for(int rate:m_panelRates)rates<<QVariantMap{{"label",tr("%1 Hz").arg(rate)},{"value",QString::number(rate)}};
-  choice("refreshMode",tr("Built-in display refresh"),"System",pol.value("refreshMode","auto"),rates,m_panelRates.size()>1,false,tr("Applied by the ROG Companion background service within 30 seconds."));
+  const QString refreshHelp=m_panelRates.size()>1
+   ?tr("Auto uses %1 Hz on battery and %2 Hz plugged in. Applies within 30 seconds.").arg(m_panelRates.first()).arg(m_panelRates.last())
+   :tr("Applied by the ROG Companion background service within 30 seconds.");
+  choice("refreshMode",tr("Built-in display refresh"),"System",pol.value("refreshMode","auto"),rates,m_panelRates.size()>1,false,refreshHelp);
  }
  numeric("keyboard",tr("Keyboard brightness"),"Lighting",number("/sys/class/leds/asus::kbd_backlight/brightness"),0,3,"",QFileInfo::exists("/sys/class/leds/asus::kbd_backlight"));
  // asusd names the file after the keyboard's USB product id (aura_19b6.ron, aura_1866.ron, …).

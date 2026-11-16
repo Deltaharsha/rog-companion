@@ -1,6 +1,6 @@
 # Maintainer: Deltaharsha <132008444+Deltaharsha@users.noreply.github.com>
 pkgname=rog-companion
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')

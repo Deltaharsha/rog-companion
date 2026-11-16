@@ -26,7 +26,7 @@ int main(int argc,char **argv){
  // Set the app ID before QGuiApplication exists: Qt registers it with the desktop portal during
  // start-up, and the platform theme talks to the portal first if the ID comes later.
  QGuiApplication::setDesktopFileName("rog-companion");
- QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");
+ QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.3.0");
  QQuickStyle::setStyle("Material");
  // Inter ships inside the binary (SIL OFL, see src/fonts/Inter-OFL.txt), so the panel looks the same on every
  // system. Numbers use the user's own monospace font, which is where the Linux personality comes from.
@@ -71,6 +71,7 @@ int main(int argc,char **argv){
  window->show();
  if(shot&&args.contains("--expanded"))window->setProperty("expanded",true);  // README screenshot of the controls
  if(shot&&args.contains("--tab"))window->setProperty("selectedTab",args.value(args.indexOf("--tab")+1).toInt());
+ if(shot&&args.contains("--dialog"))QTimer::singleShot(600,window,[window,name=args.value(args.indexOf("--dialog")+1)]{QMetaObject::invokeMethod(window,"showDialog",Q_ARG(QVariant,name));});
  if(shot){int i=args.indexOf("--screenshot");QString path=args.value(i+1,"/tmp/rog-companion.png");QTimer::singleShot(2200,&app,[&,path]{bool ok=window->grabWindow().save(path);QTextStream(stdout)<<(ok?"Saved ":"Failed ")<<path<<"\n";app.exit(ok?0:1);});}
  return app.exec();
 }

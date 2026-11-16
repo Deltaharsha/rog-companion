@@ -2,19 +2,24 @@
 
 **An ASUS ROG laptop control panel for Linux.** Fans, performance mode, battery charge limit, GPU mode, keyboard and Slash lighting, all in a compact panel that sits on your desktop. Think G-Helper, built for Hyprland and Omarchy.
 
-<p>
-  <img src="docs/panel.png" width="300" alt="ROG Companion panel showing battery, CPU and GPU temperatures and fan speeds">
-  <img src="docs/controls.png" width="300" alt="ROG Companion with controls open">
-</p>
+![ROG Companion: the panel, a live fan-curve editor and keyboard lighting](docs/banner.png)
 
 > Unofficial community project. Not made by or affiliated with ASUS. "ROG" is a trademark of ASUSTeK Computer Inc.
+
+## Screenshots
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="docs/panel.png" width="250" alt="Compact panel"><br>**At a glance:** battery ring, temperatures, fans and performance mode | <img src="docs/power.png" width="250" alt="Power settings"><br>**Power:** automatic profiles, charge limit, CPU boost and GPU mode | <img src="docs/fans.png" width="250" alt="Fan curves"><br>**Fans:** each curve drawn live as you edit it |
+| <img src="docs/lighting.png" width="250" alt="Lighting settings"><br>**Lighting:** brightness levels, effects, colour swatches and Slash bar | <img src="docs/system.png" width="250" alt="System settings"><br>**System:** brightness, automatic refresh rate, boot sound and session | <img src="docs/confirm.png" width="250" alt="Confirmation dialog"><br>**Safe by design:** anything disruptive asks first |
+| <img src="docs/shortcuts.png" width="250" alt="Keyboard shortcuts"><br>**Keyboard first:** every action has a shortcut | <img src="docs/language.png" width="250" alt="Danish interface"><br>**Your language:** follows Omarchy's language setting live | |
 
 ## What it does
 
 - **Live status:** battery, charge rate, battery health, CPU/GPU temperature and all fan speeds at a glance
 - **Performance:** Silent / Balanced / Turbo, plus separate profiles for battery and plugged in
 - **Battery care:** charge limit (20–100%) and one-off charge to 100%
-- **Fans:** custom fan curves per profile, with validation so you can't set an unsafe curve
+- **Fans:** custom fan curves per profile, drawn as a live graph, with validation so you can't set an unsafe curve
 - **GPU mode:** Hybrid, Integrated (Eco) or NVIDIA (Ultimate), queued safely for the next reboot
 - **Display:** brightness, and automatic refresh rate (e.g. 60 Hz on battery, 120 Hz plugged in) using whatever rates your panel supports
 - **Lighting:** keyboard brightness, effect and colour, keyboard power states, and Slash bar settings on models that have one
@@ -22,7 +27,7 @@
 
 Every change is **read back from the hardware** and reported as verified or not, so the panel never claims something worked when it didn't.
 
-It follows your Omarchy theme and language live, and works on any Wayland desktop with layer-shell support.
+It follows your Omarchy theme colour and language live, uses your terminal font for every number, and works on any Wayland desktop with layer-shell support.
 
 ## Supported laptops
 
@@ -40,7 +45,7 @@ ROG Companion talks to [`asusctl`/`asusd`](https://asus-linux.org), so it suppor
 Install the ready-built package from the [latest release](https://github.com/Deltaharsha/rog-companion/releases/latest). Pacman pulls in everything it needs from the official repos:
 
 ```sh
-sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.2.0/rog-companion-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.3.0/rog-companion-0.3.0-1-x86_64.pkg.tar.zst
 systemctl --user enable --now rog-companion.service rog-companion-policy.service
 ```
 
