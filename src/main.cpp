@@ -22,7 +22,10 @@ int main(int argc,char **argv){
  QStringList args;for(int i=1;i<argc;++i)args<<QString::fromLocal8Bit(argv[i]);
  const bool shot=args.contains("--screenshot"),status=args.contains("status"),apply=args.value(0)=="set",listControls=args.value(0)=="controls";
  if(shot||status||apply||listControls){qputenv("QT_QPA_PLATFORM","offscreen");qputenv("QT_QPA_PLATFORMTHEME","generic");}
- QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");app.setDesktopFileName("rog-companion");
+ // Set the app ID before QGuiApplication exists: Qt registers it with the desktop portal during
+ // start-up, and the platform theme talks to the portal first if the ID comes later.
+ QGuiApplication::setDesktopFileName("rog-companion");
+ QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.2.0");
  QQuickStyle::setStyle("Material");
  Backend backend;
  if(apply){
