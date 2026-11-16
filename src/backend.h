@@ -39,6 +39,9 @@ private:
  bool savePolicy(const QString &,const QVariant&);
  QVariantMap policy() const;
  QString armoury(const QString &name) const;
+ void requestQueuedGpu(std::function<void()> after={});
+ void applyQueuedGpu(const QVariantMap &queued);
+ int m_gpuGeneration=0; std::function<void()> m_afterGpu;
  QVariantMap m_state; QVariantList m_controls; QString m_message;
  bool m_busy=false; QTimer m_poll,m_timeout; QProcess m_process;
  QQueue<Command> m_queue; QString m_output; std::function<void(bool,QString)> m_done;

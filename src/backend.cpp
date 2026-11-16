@@ -15,6 +15,9 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusVariant>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <memory>
 #include <LayerShellQt/window.h>
 #include <cmath>
 
@@ -24,14 +27,6 @@ QString home(){return QDir::homePath();}
 QVariant number(const QString &path,double scale=1) {bool ok=false;double n=Backend::readFile(path).toDouble(&ok);return ok?QVariant(n/scale):QVariant();}
 QVariantList options(std::initializer_list<std::pair<QString,QString>> pairs){QVariantList a;for(auto &p:pairs)a<<QVariantMap{{"label",p.first},{"value",p.second}};return a;}
 QString capture(const QString&s,const QString&key){return QRegularExpression("\\b"+key+":\\s*([^,\\n]+)").match(s).captured(1).trimmed();}
-QVariant queuedGpuProperty(const QString &attribute) {
- auto request=QDBusMessage::createMethodCall("xyz.ljones.Asusd", "/xyz/ljones/asus_armoury/"+attribute,
-     "org.freedesktop.DBus.Properties", "Get");
- request << "xyz.ljones.AsusArmoury" << "QueuedGpuValue";
- const auto reply=QDBusConnection::systemBus().call(request,QDBus::Block,1000);
- if(reply.type()!=QDBusMessage::ReplyMessage || reply.arguments().isEmpty())return {};
- return qvariant_cast<QDBusVariant>(reply.arguments().first()).variant();
-}
 QString activeAuraColour(const QString &aura,const QString &mode) {
  const auto block=QRegularExpression("\\b"+QRegularExpression::escape(mode)+
      ":\\s*\\([\\s\\S]*?colour1:\\s*\\(([^)]*)\\)").match(aura);
@@ -161,16 +156,44 @@ void Backend::readState(){
  auto mux=armoury("gpu_mux_mode"),disabled=armoury("dgpu_disable");
  s["gpuMode"]=mux=="0"?"NVIDIA only":disabled=="1"?"Integrated":"Hybrid";
  if(mux.isEmpty())s["gpuMode"]="Unavailable";
- // QueuedGpuValue is daemon state, not a claim that routing already changed.
- const auto queuedMux=queuedGpuProperty("gpu_mux_mode"),queuedDisable=queuedGpuProperty("dgpu_disable");
- if(queuedMux.isValid()&&queuedDisable.isValid()) {
-  const int qm=queuedMux.toInt(),qd=queuedDisable.toInt();
-  if(qm<0&&qd<0)m_pendingGpu.clear();
-  else {const int targetMux=qm>=0?qm:mux.toInt(),targetDisable=qd>=0?qd:disabled.toInt();
-   m_pendingGpu=targetMux==0?"ultimate":targetDisable==1?"integrated":"hybrid";}
- }
  s["pendingGpu"]=m_pendingGpu;
  s["error"]="";m_state=s;buildControls();emit changed();
+ requestQueuedGpu();
+}
+// The queued GPU mode lives in asusd. Ask asynchronously: a hung daemon must never freeze the panel,
+// and this runs on every poll.
+void Backend::requestQueuedGpu(std::function<void()> after){
+ // Keep the follow-up on the object: a poll that supersedes this request must still deliver it.
+ if(after)m_afterGpu=std::move(after);
+ const int generation=++m_gpuGeneration;
+ auto results=std::make_shared<QVariantMap>();
+ auto remaining=std::make_shared<int>(2);
+ for(const QString attribute:{"gpu_mux_mode","dgpu_disable"}) {
+  auto request=QDBusMessage::createMethodCall("xyz.ljones.Asusd","/xyz/ljones/asus_armoury/"+attribute,
+      "org.freedesktop.DBus.Properties","Get");
+  request<<"xyz.ljones.AsusArmoury"<<"QueuedGpuValue";
+  auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(request,1000),this);
+  connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,generation,results,remaining,attribute](QDBusPendingCallWatcher *w){
+   QDBusPendingReply<QDBusVariant> reply=*w;w->deleteLater();
+   if(!reply.isError())(*results)[attribute]=reply.value().variant();
+   if(--*remaining>0)return;
+   // A newer request supersedes this one, so a slow old answer can't overwrite fresh state.
+   if(generation!=m_gpuGeneration)return;
+   applyQueuedGpu(*results);
+   if(m_afterGpu){auto done=std::move(m_afterGpu);m_afterGpu={};done();}
+  });
+ }
+}
+void Backend::applyQueuedGpu(const QVariantMap &queued){
+ // QueuedGpuValue is daemon state, not a claim that routing already changed.
+ const auto queuedMux=queued.value("gpu_mux_mode"),queuedDisable=queued.value("dgpu_disable");
+ if(!queuedMux.isValid()||!queuedDisable.isValid())return;
+ const int qm=queuedMux.toInt(),qd=queuedDisable.toInt();
+ QString pending;
+ if(qm>=0||qd>=0){const int targetMux=qm>=0?qm:armoury("gpu_mux_mode").toInt(),targetDisable=qd>=0?qd:armoury("dgpu_disable").toInt();
+  pending=targetMux==0?"ultimate":targetDisable==1?"integrated":"hybrid";}
+ if(pending==m_pendingGpu)return;
+ m_pendingGpu=pending;m_state["pendingGpu"]=pending;buildControls();emit changed();
 }
 void Backend::discover(){
  m_asusAvailable=!QStandardPaths::findExecutable("asusctl").isEmpty();m_ppAvailable=!QStandardPaths::findExecutable("powerprofilesctl").isEmpty();
@@ -265,7 +288,10 @@ void Backend::setControl(const QString&id,const QVariant&value){
  else if(id=="fan_enabled")asus({"fan-curve","--mod-profile",m_fanProfile,"--enable-fan-curves",value.toBool()?"true":"false"});
  else if(id=="brightness")cmds.append(Command{"brightnessctl",{"--device",m_backlight,"set",QString::number(value.toInt())+"%"}});
  else if(id=="keyboard")asus({"leds","set",QStringList{"off","low","med","high"}[value.toInt()]});
- else if(id=="aura"){if(v=="static")asus({"aura","effect",v,"-c","ffd700"});else if(v=="breathe")asus({"aura","effect",v,"-c","ffd700","--colour2","111111"});else asus({"aura","effect",v,"-c","ffd700"});}
+ else if(id=="aura"){
+  // Keep the user's colour when switching effects; gold is only the fallback when none is known.
+  QString colour=control("color").value("value").toString();if(colour.isEmpty())colour="ffd700";
+  if(v=="breathe")asus({"aura","effect",v,"-c",colour,"--colour2","111111"});else asus({"aura","effect",v,"-c",colour});}
  else if(id=="color"){if(!QRegularExpression("^[0-9a-fA-F]{6}$").match(v).hasMatch()){setMessage(tr("Enter six hexadecimal digits, without #."));return;}asus({"aura","effect","static","-c",v});}
  else if(id=="slash")asus({"slash","set",value.toBool()?"--enable":"--disable"});
  else if(id.startsWith("keyboard") && id!="keyboard"){
@@ -286,8 +312,12 @@ void Backend::setControl(const QString&id,const QVariant&value){
   if(!ok){setMessage(tr("Could not apply: %1").arg(out));readState();return;}
   readState();
   if(deferred){
-   if(m_pendingGpu==value.toString())setMessage(tr("Graphics request accepted by ASUS. Reboot required; current GPU routing has not changed."));
-   else setMessage(tr("Command accepted; firmware has not confirmed the queued graphics mode. Refresh before retrying."));
+   // Judge the result only once asusd has answered for the state after this write.
+   setMessage(tr("Checking the queued graphics mode…"));
+   requestQueuedGpu([this,value]{
+    if(m_pendingGpu==value.toString())setMessage(tr("Graphics request accepted by ASUS. Reboot required; current GPU routing has not changed."));
+    else setMessage(tr("Command accepted; firmware has not confirmed the queued graphics mode. Refresh before retrying."));
+   });
   } else if(id=="oneshot") {
    setMessage(m_state["chargeLimit"].toInt()==100?tr("Verified: one-shot charge ceiling is 100%."):tr("Command accepted; one-shot charge ceiling has not been confirmed."));
   } else if(id=="boost") {
