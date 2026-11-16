@@ -1,11 +1,11 @@
 # Maintainer: Deltaharsha <132008444+Deltaharsha@users.noreply.github.com>
 pkgname=rog-companion
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')
 url='https://github.com/Deltaharsha/rog-companion'
-license=('MIT')
+license=('MIT' 'OFL-1.1')
 depends=('asusctl' 'power-profiles-daemon' 'brightnessctl' 'upower' 'python-gobject' 'polkit'
          'qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt')
 optdepends=('hyprland: automatic refresh-rate switching'
@@ -13,7 +13,7 @@ optdepends=('hyprland: automatic refresh-rate switching'
 makedepends=('gcc' 'make')
 install=rog-companion.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('9d99ff7314d97a79b8198f6e5db9bc9e60663bbfe3917863e10b2e3703280f10')
+sha256sums=('1b75315a5c56c5b209a8ff68b9167db87b33b3902f79c38f5e9b5886b7aa8eaa')
 
 build() {
   cd "$pkgname-$pkgver"
@@ -35,4 +35,5 @@ package() {
   install -Dm644 pkgbuild/rog-companion.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/rog-companion.svg"
   install -Dm644 pkgbuild/rog-companion.desktop "$pkgdir/usr/share/applications/rog-companion.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 src/fonts/Inter-OFL.txt "$pkgdir/usr/share/licenses/$pkgname/Inter-OFL.txt"
 }
