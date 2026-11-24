@@ -1,9 +1,38 @@
+# asus-gpu-late-apply.service replaces asusd's asus-shutdown.service (see
+# /usr/lib/systemd/system/asus-shutdown.service.d/rog-companion.conf).
+# Hand over on the running system too, not just from the next boot.
+# asus-shutdown exits on SIGTERM without applying anything.
+_gpu_apply_handover() {
+  [ -d /run/systemd/system ] || return 0
+  systemctl daemon-reload
+  systemctl start asus-gpu-late-apply.service || true
+  systemctl stop asus-shutdown.service 2>/dev/null || true
+}
+
+_manual_fix_note() {
+  [ -e /etc/systemd/system/asus-gpu-late-apply.service ] || [ -e /usr/local/lib/asus-gpu-late-apply ] || return 0
+  echo ">> The Eco restart fix is now built in. Remove the copy you installed by hand from the 0.3.0 release with:"
+  echo "     sudo rm -f /etc/systemd/system/asus-gpu-late-apply.service /etc/systemd/system/multi-user.target.wants/asus-gpu-late-apply.service /usr/local/lib/asus-gpu-late-apply"
+  echo "     sudo systemctl unmask asus-shutdown.service"
+}
+
 post_install() {
+  _gpu_apply_handover
   echo ">> Start ROG Companion now and at every login with:"
   echo "     systemctl --user enable --now rog-companion.service rog-companion-policy.service"
+  _manual_fix_note
 }
 
 post_upgrade() {
+  _gpu_apply_handover
   echo ">> Restart ROG Companion to use the new version:"
   echo "     systemctl --user restart rog-companion.service rog-companion-policy.service"
+  _manual_fix_note
+}
+
+post_remove() {
+  [ -d /run/systemd/system ] || return 0
+  systemctl daemon-reload
+  # Give queued GPU changes back to asusd's own helper.
+  systemctl start asus-shutdown.service 2>/dev/null || true
 }

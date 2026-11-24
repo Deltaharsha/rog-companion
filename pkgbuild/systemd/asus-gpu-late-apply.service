@@ -1,6 +1,6 @@
 [Unit]
 Description=Apply queued ASUS GPU mode after the desktop has stopped
-Documentation=file:/usr/local/lib/asus-gpu-late-apply
+Documentation=https://github.com/Deltaharsha/rog-companion/tree/main/contrib/eco-restart-fix
 # Stop order is the reverse of start order. This unit therefore stops:
 #  - after the display manager and all user sessions (Hyprland) are gone,
 #  - before asusd and D-Bus, which it calls,
@@ -15,9 +15,7 @@ Before=plymouth-reboot.service plymouth-poweroff.service plymouth-halt.service p
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/true
-ExecStop=/usr/local/lib/asus-gpu-late-apply
+ExecStop=/usr/lib/rog-companion/asus-gpu-late-apply
 TimeoutStopSec=90
 SyslogIdentifier=asus-gpu-late-apply
 
-[Install]
-WantedBy=multi-user.target

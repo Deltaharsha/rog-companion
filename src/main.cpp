@@ -26,7 +26,7 @@ int main(int argc,char **argv){
  // Set the app ID before QGuiApplication exists: Qt registers it with the desktop portal during
  // start-up, and the platform theme talks to the portal first if the ID comes later.
  QGuiApplication::setDesktopFileName("rog-companion");
- QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.3.0");
+ QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.3.1");
  QQuickStyle::setStyle("Material");
  // Inter ships inside the binary (SIL OFL, see src/fonts/Inter-OFL.txt), so the panel looks the same on every
  // system. Numbers use the user's own monospace font, which is where the Linux personality comes from.

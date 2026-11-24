@@ -7,10 +7,19 @@
 # dgpu_disable=1 then hot-removes a GPU that is in use, nvidia_modeset oopses,
 # and the reboot hangs at the splash screen.
 #
-# Runs as ExecStop of asus-gpu-late-apply.service. Never blocks shutdown on
+# Runs as ExecStop of asus-gpu-late-apply.service (shipped with ROG Companion). Never blocks shutdown on
 # failure: if the NVIDIA driver cannot be unloaded, Eco is skipped (the
 # machine reboots in its current mode) instead of risking the hang.
 set -u
+
+# Act only during a real shutdown. Stopping or restarting this unit while the
+# desktop is running must never take the GPU away from it.
+case $(systemctl is-system-running 2>/dev/null) in
+running | degraded | starting | initializing | maintenance)
+	echo "not shutting down; queued GPU changes are left for the next restart"
+	exit 0
+	;;
+esac
 
 DEST=xyz.ljones.Asusd
 IFACE=xyz.ljones.AsusArmoury

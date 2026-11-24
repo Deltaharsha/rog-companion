@@ -45,7 +45,7 @@ ROG Companion talks to [`asusctl`/`asusd`](https://asus-linux.org), so it suppor
 Install the ready-built package from the [latest release](https://github.com/Deltaharsha/rog-companion/releases/latest). Pacman pulls in everything it needs from the official repos:
 
 ```sh
-sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.3.0/rog-companion-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.3.1/rog-companion-0.3.1-1-x86_64.pkg.tar.zst
 systemctl --user enable --now rog-companion.service rog-companion-policy.service
 ```
 
@@ -89,7 +89,7 @@ rog-companion set charge 80     # change a setting; prints JSON, exits 0 or 1
 
 - **Opening the panel never writes to your hardware.** Only touching a control does.
 - **GPU mode changes need a reboot.** The panel shows what's queued separately from what's active.
-- **Restart hangs after switching to Eco?** That's an asusd issue on laptops where the desktop uses the NVIDIA GPU. [contrib/eco-restart-fix](contrib/eco-restart-fix) has a verified fix.
+- **GPU mode changes are applied safely on restart.** The package replaces asusd's `asus-shutdown` helper, which can hang the restart after switching to Eco. [Details and opt-out](contrib/eco-restart-fix).
 - **Fan curves** need eight points with rising temperatures, ending at 100% speed.
 - **Firmware power limits** are shown for reference when your laptop reports them. Changing them isn't supported yet.
 - Hardware details for the tested model are in [HARDWARE.md](HARDWARE.md).
