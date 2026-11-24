@@ -1,0 +1,86 @@
+#!/bin/bash
+# Apply GPU mode changes queued in asusd (Eco / Hybrid / Ultimate) late in
+# shutdown, after the display manager and every user session have stopped.
+#
+# Replaces asus-shutdown.service, which applies the queue as soon as shutdown
+# is requested, while Hyprland still holds the NVIDIA GPU. Writing
+# dgpu_disable=1 then hot-removes a GPU that is in use, nvidia_modeset oopses,
+# and the reboot hangs at the splash screen.
+#
+# Runs as ExecStop of asus-gpu-late-apply.service. Never blocks shutdown on
+# failure: if the NVIDIA driver cannot be unloaded, Eco is skipped (the
+# machine reboots in its current mode) instead of risking the hang.
+set -u
+
+DEST=xyz.ljones.Asusd
+IFACE=xyz.ljones.AsusArmoury
+BASE=/xyz/ljones/asus_armoury
+
+queued() { # prints the queued value of an attribute, or -1
+	local out
+	out=$(busctl --timeout=10 get-property "$DEST" "$BASE/$1" "$IFACE" QueuedGpuValue 2>/dev/null) || {
+		echo -1
+		return
+	}
+	echo "${out#i }"
+}
+
+apply() {
+	echo "applying $1 = $2"
+	if busctl --timeout=30 call "$DEST" "$BASE/$1" "$IFACE" ApplyQueuedGpuValue >/dev/null; then
+		echo "applied $1 = $2"
+	else
+		echo "FAILED to apply $1 = $2" >&2
+	fi
+}
+
+nvidia_loaded() { [[ -d /sys/module/nvidia ]]; }
+
+unload_nvidia() {
+	nvidia_loaded || return 0
+	# nvidia-powerd keeps /dev/nvidia* open. Signal it rather than queue a stop
+	# job, which would deadlock against this shutdown transaction.
+	systemctl is-active -q nvidia-powerd.service && systemctl kill nvidia-powerd.service
+	local deactivated=0 i
+	for i in {1..20}; do
+		modprobe -r nvidia_drm nvidia_modeset nvidia_uvm nvidia 2>/dev/null && break
+		# Fallback: the shutdown splash may hold the NVIDIA DRM node.
+		if ((i == 3)) && pidof -q plymouthd; then
+			plymouth deactivate 2>/dev/null && deactivated=1
+		fi
+		sleep 0.5
+	done
+	((deactivated)) && plymouth reactivate 2>/dev/null
+	if nvidia_loaded; then
+		echo "NVIDIA driver still in use; holders:" >&2
+		for f in /dev/nvidia* /dev/dri/by-path/pci-0000:01:00.0-*; do
+			[[ -e $f ]] && fuser -v "$f" 2>&1 | sed 's/^/  /' >&2
+		done
+		return 1
+	fi
+	echo "NVIDIA driver unloaded"
+}
+
+mux=$(queued gpu_mux_mode)
+dgpu=$(queued dgpu_disable)
+[[ $mux == -1 && $dgpu == -1 ]] && exit 0
+echo "queued: gpu_mux_mode=$mux dgpu_disable=$dgpu"
+
+safe=1
+unload_nvidia || safe=0
+
+if [[ $dgpu == 1 && $safe == 0 ]]; then
+	echo "SKIPPING dgpu_disable=1 (Eco): the GPU is still in use and removing it would hang the reboot. Switch to Eco again and restart." >&2
+	dgpu=-1
+fi
+
+# Enable the dGPU before routing the display to it (Ultimate); route away
+# from it before disabling it (Eco).
+if [[ $dgpu == 0 ]]; then
+	apply dgpu_disable "$dgpu"
+	[[ $mux != -1 ]] && apply gpu_mux_mode "$mux"
+else
+	[[ $mux != -1 ]] && apply gpu_mux_mode "$mux"
+	[[ $dgpu != -1 ]] && apply dgpu_disable "$dgpu"
+fi
+exit 0

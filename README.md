@@ -89,6 +89,7 @@ rog-companion set charge 80     # change a setting; prints JSON, exits 0 or 1
 
 - **Opening the panel never writes to your hardware.** Only touching a control does.
 - **GPU mode changes need a reboot.** The panel shows what's queued separately from what's active.
+- **Restart hangs after switching to Eco?** That's an asusd issue on laptops where the desktop uses the NVIDIA GPU. [contrib/eco-restart-fix](contrib/eco-restart-fix) has a verified fix.
 - **Fan curves** need eight points with rising temperatures, ending at 100% speed.
 - **Firmware power limits** are shown for reference when your laptop reports them. Changing them isn't supported yet.
 - Hardware details for the tested model are in [HARDWARE.md](HARDWARE.md).

@@ -1,0 +1,23 @@
+[Unit]
+Description=Apply queued ASUS GPU mode after the desktop has stopped
+Documentation=file:/usr/local/lib/asus-gpu-late-apply
+# Stop order is the reverse of start order. This unit therefore stops:
+#  - after the display manager and all user sessions (Hyprland) are gone,
+#  - before asusd and D-Bus, which it calls,
+#  - before the plymouth shutdown splash starts (a stop is always ordered
+#    before a start between related units), so the splash never holds the dGPU.
+After=asusd.service dbus.service
+Wants=asusd.service
+Before=display-manager.service systemd-user-sessions.service
+Before=plymouth-reboot.service plymouth-poweroff.service plymouth-halt.service plymouth-kexec.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/lib/asus-gpu-late-apply
+TimeoutStopSec=90
+SyslogIdentifier=asus-gpu-late-apply
+
+[Install]
+WantedBy=multi-user.target
