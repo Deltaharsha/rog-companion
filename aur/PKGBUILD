@@ -1,6 +1,6 @@
 # Maintainer: Deltaharsha <132008444+Deltaharsha@users.noreply.github.com>
 pkgname=rog-companion
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')
@@ -13,7 +13,7 @@ optdepends=('hyprland: automatic refresh-rate switching'
 makedepends=('gcc' 'make')
 install=rog-companion.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('1b75315a5c56c5b209a8ff68b9167db87b33b3902f79c38f5e9b5886b7aa8eaa')
+sha256sums=('4c4bd76911c084d5b7ed721a6757648d4c3b85559874508a458a0284d4e72121')
 
 build() {
   cd "$pkgname-$pkgver"
@@ -32,6 +32,11 @@ package() {
   install -Dm755 src/rog-companion-policy "$pkgdir/usr/lib/rog-companion/rog-companion-policy"
   install -Dm644 pkgbuild/systemd/rog-companion.service "$pkgdir/usr/lib/systemd/user/rog-companion.service"
   install -Dm644 pkgbuild/systemd/rog-companion-policy.service "$pkgdir/usr/lib/systemd/user/rog-companion-policy.service"
+  install -Dm755 src/asus-gpu-late-apply "$pkgdir/usr/lib/rog-companion/asus-gpu-late-apply"
+  install -Dm644 pkgbuild/systemd/asus-gpu-late-apply.service "$pkgdir/usr/lib/systemd/system/asus-gpu-late-apply.service"
+  install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
+  ln -s ../asus-gpu-late-apply.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/asus-gpu-late-apply.service"
+  install -Dm644 pkgbuild/systemd/asus-shutdown-rog-companion.conf "$pkgdir/usr/lib/systemd/system/asus-shutdown.service.d/rog-companion.conf"
   install -Dm644 pkgbuild/rog-companion.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/rog-companion.svg"
   install -Dm644 pkgbuild/rog-companion.desktop "$pkgdir/usr/share/applications/rog-companion.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

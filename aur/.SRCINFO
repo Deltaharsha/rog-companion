@@ -1,6 +1,6 @@
 pkgbase = rog-companion
 	pkgdesc = ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)
-	pkgver = 0.3.0
+	pkgver = 0.3.1
 	pkgrel = 1
 	url = https://github.com/Deltaharsha/rog-companion
 	install = rog-companion.install
@@ -21,7 +21,7 @@ pkgbase = rog-companion
 	depends = layer-shell-qt
 	optdepends = hyprland: automatic refresh-rate switching
 	optdepends = nvidia-utils: NVIDIA GPU temperature and power readings
-	source = rog-companion-0.3.0.tar.gz::https://github.com/Deltaharsha/rog-companion/archive/refs/tags/v0.3.0.tar.gz
-	sha256sums = 1b75315a5c56c5b209a8ff68b9167db87b33b3902f79c38f5e9b5886b7aa8eaa
+	source = rog-companion-0.3.1.tar.gz::https://github.com/Deltaharsha/rog-companion/archive/refs/tags/v0.3.1.tar.gz
+	sha256sums = 4c4bd76911c084d5b7ed721a6757648d4c3b85559874508a458a0284d4e72121
 
 pkgname = rog-companion
