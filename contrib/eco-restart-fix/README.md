@@ -6,6 +6,8 @@
 
 **Fix:** `asus-gpu-late-apply.service` replaces that helper. On shutdown it waits until the display manager and all user sessions have stopped. It then unloads the NVIDIA driver and asks asusd to apply the queued change. If the driver can't be unloaded, it skips Eco and lets the restart finish in the current mode.
 
+**Ultimate → Eco (0.3.2 and later):** this switch can't be finished in one shutdown. The display switch (MUX) only takes effect at the next boot. Until then the NVIDIA GPU still drives the panel, so the firmware refuses to turn it off (`Device or resource busy`). Up to 0.3.1 you therefore landed in Hybrid and needed a second restart. Now the shutdown step switches the MUX and leaves a marker in `/var/lib/rog-companion`. Early in the next boot, before the login screen starts, the service unloads the NVIDIA driver and turns the GPU off. You still restart only once. If the driver is busy, the helper asks asusd to queue Eco for the following restart. An unsuccessful or interrupted boot attempt leaves `/var/lib/rog-companion/finish-eco-failed`. Check the service journal for the reason.
+
 Verified on the ROG Zephyrus G14 GA403UP (RTX 5070 Laptop, nvidia-open 615.78) through real Hybrid → restart and Eco → restart cycles.
 
 ## In the ROG Companion package (0.3.1 and later)
@@ -16,7 +18,7 @@ Nothing to do. The package installs:
 |---|---|
 | [`/usr/lib/rog-companion/asus-gpu-late-apply`](../../src/asus-gpu-late-apply) | Applies the queue late in shutdown |
 | [`/usr/lib/systemd/system/asus-gpu-late-apply.service`](../../pkgbuild/systemd/asus-gpu-late-apply.service) | Runs it, always enabled |
-| [`/usr/lib/systemd/system/asus-shutdown.service.d/rog-companion.conf`](../../pkgbuild/systemd/asus-shutdown-rog-companion.conf) | Keeps `asus-shutdown` from starting while the package is installed |
+| [`/usr/lib/systemd/system/asus-shutdown.service.d/rog-companion.conf`](../../pkgbuild/systemd/asus-shutdown-rog-companion.conf) | Keeps `asus-shutdown` from starting once the replacement service is active |
 
 Removing the package hands GPU changes back to `asus-shutdown`.
 
@@ -27,6 +29,19 @@ queued: gpu_mux_mode=-1 dgpu_disable=1
 NVIDIA driver unloaded
 applying dgpu_disable = 1
 applied dgpu_disable = 1
+```
+
+A switch from Ultimate to Eco logs over two boots (`-b -1`, then `-b 0`):
+
+```
+leaving Ultimate: switching the display now, Eco is finished at the next boot
+applied gpu_mux_mode = 1
+Eco will be finished at the next boot
+---
+finishing Eco after leaving Ultimate: gpu_mux_mode=1 dgpu_disable=0
+NVIDIA driver unloaded
+applied dgpu_disable = 1
+Eco finished; the NVIDIA GPU is off
 ```
 
 **Opt out** (go back to `asus-shutdown`):

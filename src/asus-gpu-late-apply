@@ -7,32 +7,36 @@
 # dgpu_disable=1 then hot-removes a GPU that is in use, nvidia_modeset oopses,
 # and the reboot hangs at the splash screen.
 #
-# Runs as ExecStop of asus-gpu-late-apply.service (shipped with ROG Companion). Never blocks shutdown on
-# failure: if the NVIDIA driver cannot be unloaded, Eco is skipped (the
-# machine reboots in its current mode) instead of risking the hang.
+# Ultimate -> Eco cannot be done in one shutdown: the MUX switch only takes
+# effect at the next boot, and until then the firmware refuses dgpu_disable=1
+# (EBUSY) because the NVIDIA GPU still drives the panel. So the shutdown step
+# switches the MUX and leaves a marker, and the boot step (--boot, run before
+# the display manager starts) finishes Eco while nothing uses the GPU yet.
+#
+# Runs as ExecStop (shutdown) and ExecStart --boot of asus-gpu-late-apply.service
+# (shipped with ROG Companion). Never blocks shutdown or boot on failure: if
+# the NVIDIA driver cannot be unloaded, Eco is skipped or left queued for the
+# next restart instead of risking a hang.
 set -u
-
-# Act only during a real shutdown. Stopping or restarting this unit while the
-# desktop is running must never take the GPU away from it.
-case $(systemctl is-system-running 2>/dev/null) in
-running | degraded | starting | initializing | maintenance)
-	echo "not shutting down; queued GPU changes are left for the next restart"
-	exit 0
-	;;
-esac
 
 DEST=xyz.ljones.Asusd
 IFACE=xyz.ljones.AsusArmoury
 BASE=/xyz/ljones/asus_armoury
+SYSROOT=${ASUS_GPU_LATE_APPLY_SYSROOT:-} # tests only
+STATE=${STATE_DIRECTORY:-/var/lib/rog-companion}
+MARKER=$STATE/finish-eco-at-boot
+NVIDIA_PCI=pci-0000:01:00.0
 
-queued() { # prints the queued value of an attribute, or -1
+prop() { # prints an attribute's property (QueuedGpuValue, CurrentValue), or -1
 	local out
-	out=$(busctl --timeout=10 get-property "$DEST" "$BASE/$1" "$IFACE" QueuedGpuValue 2>/dev/null) || {
+	out=$(busctl --timeout=10 get-property "$DEST" "$BASE/$1" "$IFACE" "$2" 2>/dev/null) || {
 		echo -1
 		return
 	}
 	echo "${out#i }"
 }
+queued() { prop "$1" QueuedGpuValue; }
+current() { prop "$1" CurrentValue; }
 
 apply() {
 	echo "applying $1 = $2"
@@ -40,29 +44,36 @@ apply() {
 		echo "applied $1 = $2"
 	else
 		echo "FAILED to apply $1 = $2" >&2
+		return 1
 	fi
 }
 
-nvidia_loaded() { [[ -d /sys/module/nvidia ]]; }
+request() { # asks asusd for a value; asusd queues GPU attributes for the next apply
+	busctl --timeout=30 set-property "$DEST" "$BASE/$1" "$IFACE" CurrentValue i "$2"
+}
+
+nvidia_loaded() { [[ -d $SYSROOT/sys/module/nvidia ]]; }
 
 unload_nvidia() {
 	nvidia_loaded || return 0
 	# nvidia-powerd keeps /dev/nvidia* open. Signal it rather than queue a stop
-	# job, which would deadlock against this shutdown transaction.
+	# job, which would deadlock against the running boot or shutdown transaction.
 	systemctl is-active -q nvidia-powerd.service && systemctl kill nvidia-powerd.service
-	local deactivated=0 i
+	local i
 	for i in {1..20}; do
 		modprobe -r nvidia_drm nvidia_modeset nvidia_uvm nvidia 2>/dev/null && break
-		# Fallback: the shutdown splash may hold the NVIDIA DRM node.
-		if ((i == 3)) && pidof -q plymouthd; then
-			plymouth deactivate 2>/dev/null && deactivated=1
+		# Fallback: a splash still holding the GPU (the boot step already
+		# ends it). Ask plymouth itself: pidof missed the boot splash on the
+		# GA403UP. At boot this runs after the disk is unlocked (cryptsetup.target).
+		if ((i == 3)) && { plymouth --ping 2>/dev/null || pidof -q plymouthd; }; then
+			echo "ending the splash screen, which holds the NVIDIA GPU"
+			plymouth quit --retain-splash 2>/dev/null
 		fi
 		sleep 0.5
 	done
-	((deactivated)) && plymouth reactivate 2>/dev/null
 	if nvidia_loaded; then
 		echo "NVIDIA driver still in use; holders:" >&2
-		for f in /dev/nvidia* /dev/dri/by-path/pci-0000:01:00.0-*; do
+		for f in /dev/nvidia* /dev/dri/by-path/$NVIDIA_PCI-*; do
 			[[ -e $f ]] && fuser -v "$f" 2>&1 | sed 's/^/  /' >&2
 		done
 		return 1
@@ -70,10 +81,101 @@ unload_nvidia() {
 	echo "NVIDIA driver unloaded"
 }
 
+# Second half of Ultimate -> Eco, run at boot before the display manager.
+finish_eco_at_boot() {
+	[[ -e $MARKER ]] || exit 0
+	# Keep a durable diagnostic if the attempt is interrupted or fails.
+	local failed=$STATE/finish-eco-failed
+	mv -f "$MARKER" "$failed" || exit 1
+
+	case $(systemctl is-system-running 2>/dev/null) in
+	initializing | starting) ;;
+	*)
+		# Started by hand or by a package upgrade on a running desktop: the
+		# GPU may be in use, so leave Eco for the next restart.
+		request dgpu_disable 1 && { rm -f "$failed"; echo "Eco queued for the next restart"; }
+		exit 0
+		;;
+	esac
+
+	local mux dgpu
+	mux=$(current gpu_mux_mode)
+	dgpu=$(current dgpu_disable)
+	echo "finishing Eco after leaving Ultimate: gpu_mux_mode=$mux dgpu_disable=$dgpu"
+	if [[ $mux != 1 ]]; then
+		echo "the display is not on the integrated GPU (gpu_mux_mode=$mux); Eco not applied" >&2
+		exit 0
+	fi
+	[[ $dgpu == 1 ]] && {
+		rm -f "$failed"
+		echo "already in Eco"
+		exit 0
+	}
+
+	# The boot splash opens every DRM device, including the NVIDIA one, and
+	# only exiting releases it (`plymouth deactivate` does not). End it now,
+	# keeping its last frame: plymouth-quit.service would end it moments later
+	# anyway, since the display manager waits for this unit. This is done
+	# unconditionally because detecting the splash (pidof) missed it on the
+	# GA403UP; `plymouth quit` is harmless when no splash is running.
+	if command -v plymouth >/dev/null; then
+		echo "ending the boot splash so it releases the NVIDIA GPU"
+		plymouth quit --retain-splash 2>/dev/null || echo "(no boot splash running)"
+	fi
+	if ! unload_nvidia; then
+		echo "NVIDIA driver is in use; deferring Eco" >&2
+		request dgpu_disable 1 && { rm -f "$failed"; echo "Eco queued for the next restart"; }
+		exit 0
+	fi
+	if request dgpu_disable 1 && { [[ $(queued dgpu_disable) != 1 ]] || apply dgpu_disable 1; }; then
+		if [[ $(current dgpu_disable) == 1 ]]; then
+			rm -f "$failed"
+			echo "Eco finished; the NVIDIA GPU is off"
+		else
+			echo "Eco did not take effect (dgpu_disable=$(current dgpu_disable)); staying in Hybrid" >&2
+		fi
+	else
+		echo "Eco could not be applied at boot; staying in Hybrid" >&2
+	fi
+	exit 0
+}
+
+if [[ ${1:-} == --boot ]]; then
+	finish_eco_at_boot
+fi
+
+# Act only during a real shutdown. Stopping or restarting this unit while the
+# desktop is running must never take the GPU away from it.
+case $(systemctl is-system-running 2>/dev/null) in
+stopping) ;;
+*)
+	echo "not shutting down; queued GPU changes are left for the next restart"
+	exit 0
+	;;
+esac
+
 mux=$(queued gpu_mux_mode)
 dgpu=$(queued dgpu_disable)
 [[ $mux == -1 && $dgpu == -1 ]] && exit 0
 echo "queued: gpu_mux_mode=$mux dgpu_disable=$dgpu"
+
+# Leaving Ultimate for Eco: the firmware rejects dgpu_disable=1 until the MUX
+# switch has taken effect, so finish Eco at the next boot.
+eco_at_boot=0
+if [[ $dgpu == 1 && $(current gpu_mux_mode) == 0 ]]; then
+	dgpu=-1
+	if [[ $mux == 1 ]]; then
+		eco_at_boot=1
+		echo "leaving Ultimate: switching the display now, Eco is finished at the next boot"
+	else
+		echo "SKIPPING dgpu_disable=1 (Eco): the display is still on the NVIDIA GPU (Ultimate) and no switch back is queued" >&2
+	fi
+fi
+
+if [[ $dgpu == 1 && $(current gpu_mux_mode) != 1 ]]; then
+	echo "Cannot verify integrated routing; skipping Eco" >&2
+	exit 1
+fi
 
 safe=1
 unload_nvidia || safe=0
@@ -86,10 +188,21 @@ fi
 # Enable the dGPU before routing the display to it (Ultimate); route away
 # from it before disabling it (Eco).
 if [[ $dgpu == 0 ]]; then
-	apply dgpu_disable "$dgpu"
-	[[ $mux != -1 ]] && apply gpu_mux_mode "$mux"
-else
-	[[ $mux != -1 ]] && apply gpu_mux_mode "$mux"
-	[[ $dgpu != -1 ]] && apply dgpu_disable "$dgpu"
+	apply dgpu_disable 0 && [[ $(current dgpu_disable) == 0 ]] || exit 1
+fi
+if [[ $mux == 0 && $(current dgpu_disable) != 0 ]]; then
+	echo "Cannot verify NVIDIA is enabled; skipping MUX switch" >&2
+	exit 1
+fi
+if [[ $mux != -1 ]]; then
+	# Firmware can report the old routing until reboot. The boot step verifies
+	# integrated routing before it attempts to disable the NVIDIA GPU.
+	apply gpu_mux_mode "$mux" || exit 1
+fi
+if ((eco_at_boot)); then
+	mkdir -p "$STATE" && : >"$MARKER" || exit 1
+	echo "Eco will be finished at the next boot"
+elif [[ $dgpu == 1 ]]; then
+	[[ $(current gpu_mux_mode) == 1 ]] && apply dgpu_disable 1 || exit 1
 fi
 exit 0

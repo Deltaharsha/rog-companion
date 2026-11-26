@@ -5,6 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$ROOT/build/tests"
 cd "$ROOT/build/tests"
 
+bash "$ROOT/tests/late-apply-test.sh"
+
 qmake6 "$ROOT/tests/rog_companion_tests.pro"
 make -j4
 QT_QPA_PLATFORM=offscreen ./rog_companion_tests

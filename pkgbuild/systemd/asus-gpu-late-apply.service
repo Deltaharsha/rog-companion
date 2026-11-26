@@ -6,16 +6,23 @@ Documentation=https://github.com/Deltaharsha/rog-companion/tree/main/contrib/eco
 #  - before asusd and D-Bus, which it calls,
 #  - before the plymouth shutdown splash starts (a stop is always ordered
 #    before a start between related units), so the splash never holds the dGPU.
-After=asusd.service dbus.service
+# At boot it starts before the display manager and logins, so ExecStart can
+# finish an Ultimate -> Eco switch while nothing uses the NVIDIA GPU yet.
+After=asusd.service dbus.service cryptsetup.target
 Wants=asusd.service
-Before=display-manager.service systemd-user-sessions.service
+Before=asus-shutdown.service display-manager.service systemd-user-sessions.service
 Before=plymouth-reboot.service plymouth-poweroff.service plymouth-halt.service plymouth-kexec.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/true
+ExecStart=/usr/lib/rog-companion/asus-gpu-late-apply --boot
 ExecStop=/usr/lib/rog-companion/asus-gpu-late-apply
+TimeoutStartSec=90
 TimeoutStopSec=90
+# Holds the marker that finishes Ultimate -> Eco at the next boot.
+StateDirectory=rog-companion
+RuntimeDirectory=rog-companion-gpu
+ExecStartPost=/usr/bin/touch /run/rog-companion-gpu/active
 SyslogIdentifier=asus-gpu-late-apply
 
