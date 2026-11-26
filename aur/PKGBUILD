@@ -1,6 +1,6 @@
 # Maintainer: Deltaharsha <132008444+Deltaharsha@users.noreply.github.com>
 pkgname=rog-companion
-pkgver=0.3.1
+pkgver=0.3.2
 pkgrel=1
 pkgdesc='ASUS ROG laptop control panel for Linux: fans, power, battery limit, GPU mode and lighting (unofficial)'
 arch=('x86_64')
@@ -13,7 +13,7 @@ optdepends=('hyprland: automatic refresh-rate switching'
 makedepends=('gcc' 'make')
 install=rog-companion.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('4c4bd76911c084d5b7ed721a6757648d4c3b85559874508a458a0284d4e72121')
+sha256sums=('2a14bc9fc84e7c442201dde43a56d0110b7845e6ce1046dcf1c99b22aec85359')
 
 build() {
   cd "$pkgname-$pkgver"
