@@ -138,6 +138,24 @@ Item {
             compare(backend.calls[0].value,"integrated")
             tryCompare(locate("confirmationDialog"),"visible",false)
         }
+        function test_cancel_pending_gpu_by_selecting_active_mode() {
+            const previous = backend.state
+            backend.state = Object.assign({}, previous, {pendingGpu: "integrated"})
+            try {
+                tap("tab_0")
+                const menu = tap("choice_gpu").menu
+                tryVerify(function() { return menu.opened })
+                const active = menu.itemAt(0)
+                compare(active.objectName, "option_gpu_hybrid")
+                mouseClick(active)
+                tryCompare(locate("confirmationDialog"), "opened", true)
+                tap("confirmApply")
+                compare(backend.calls.length, 1)
+                compare(backend.calls[0].value, "hybrid")
+            } finally {
+                backend.state = previous
+            }
+        }
         function test_09_typed_curve_needs_apply() {
             tap("tab_1")
             let field = null

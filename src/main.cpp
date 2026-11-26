@@ -26,7 +26,7 @@ int main(int argc,char **argv){
  // Set the app ID before QGuiApplication exists: Qt registers it with the desktop portal during
  // start-up, and the platform theme talks to the portal first if the ID comes later.
  QGuiApplication::setDesktopFileName("rog-companion");
- QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.3.1");
+ QGuiApplication app(argc,argv);app.setApplicationName("rog-companion");app.setApplicationVersion("0.3.2");
  QQuickStyle::setStyle("Material");
  // Inter ships inside the binary (SIL OFL, see src/fonts/Inter-OFL.txt), so the panel looks the same on every
  // system. Numbers use the user's own monospace font, which is where the Linux personality comes from.
@@ -41,17 +41,18 @@ int main(int argc,char **argv){
  Backend backend;
  if(apply){
   if(args.size()<3){QTextStream(stderr)<<"Usage: rog-companion set CONTROL VALUE --json\n";return 1;}
-  QTimer::singleShot(1200,&app,[&]{
-   QVariant value=args[2];if(args[2]=="true")value=true;else if(args[2]=="false")value=false;
-   backend.setControl(args[1],value);
-   auto *poll=new QTimer(&app);poll->setInterval(100);
-   QObject::connect(poll,&QTimer::timeout,&app,[&]{auto msg=backend.message();if(!backend.busy()&&!msg.startsWith("Checking")){bool ok=msg.startsWith("Verified")||msg.startsWith("Command accepted")||msg.startsWith("Graphics request");QTextStream(stdout)<<QJsonDocument(QJsonObject{{"ok",ok},{"message",msg},{"state",QJsonObject::fromVariantMap(backend.state())}}).toJson();app.exit(ok?0:1);}});poll->start();
-  });return app.exec();
+  QObject::connect(&backend,&Backend::controlFinished,&app,[&](bool ok){
+   QTextStream(stdout)<<QJsonDocument(QJsonObject{{"ok",ok},{"message",backend.message()},{"state",QJsonObject::fromVariantMap(backend.state())}}).toJson();
+   app.exit(ok?0:1);
+  });
+  QObject::connect(&backend,&Backend::discoveryFinished,&app,[&]{backend.setControl(args[1],args[2]);},Qt::SingleShotConnection);
+  return app.exec();
  }
  // Every control with whether it's available here and why not: what testers paste into bug reports.
- if(listControls){QTimer::singleShot(1500,&app,[&]{QJsonArray out;
+ if(listControls){QObject::connect(&backend,&Backend::discoveryFinished,&app,[&]{QJsonArray out;
   for(const auto &v:backend.controls()){const auto c=v.toMap();QJsonObject o{{"id",c["id"].toString()},{"label",c["label"].toString()},{"group",c["group"].toString()},{"available",c["available"].toBool()},{"value",QJsonValue::fromVariant(c["value"])}};
-   if(!c["available"].toBool())o["reason"]=c["reason"].toString();out<<o;}
+   if(!c["available"].toBool())o["reason"]=c["reason"].toString();
+   out<<o;}
   QTextStream(stdout)<<QJsonDocument(out).toJson();app.quit();});return app.exec();}
  if(status){QTimer::singleShot(1200,&app,[&]{auto s=backend.state();QTextStream(stdout)<<QJsonDocument(QJsonObject::fromVariantMap(s)).toJson();app.quit();});return app.exec();}
  Theme theme;Translator translator(args.contains("--language-test")?args.value(args.indexOf("--language-test")+1):QString());app.installTranslator(&translator);

@@ -300,7 +300,7 @@ ApplicationWindow {
                     height: segmented.height - 6
                     enabled: segmented.control.available !== false && !backend.busy
                     focusPolicy: Qt.StrongFocus
-                    onClicked: if (index !== segmented.current) window.apply(segmented.control, modelData.value)
+                    onClicked: if (index !== segmented.current || (segmented.control.id === "gpu" && window.telemetry.pendingGpu)) window.apply(segmented.control, modelData.value)
                     contentItem: Txt {
                         text: segment.modelData.label
                         horizontalAlignment: Text.AlignHCenter
@@ -459,7 +459,7 @@ ApplicationWindow {
                                 objectName: "option_" + row.control.id + "_" + modelData.value
                                 text: (String(modelData.value) === String(row.control.value) ? "✓  " : "     ") + modelData.label
                                 font.family: window.font.family
-                                onTriggered: if (String(modelData.value) !== String(row.control.value)) window.apply(row.control, modelData.value)
+                                onTriggered: if (String(modelData.value) !== String(row.control.value) || (row.control.id === "gpu" && window.telemetry.pendingGpu)) window.apply(row.control, modelData.value)
                             }
                         }
                     }

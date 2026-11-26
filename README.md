@@ -45,7 +45,7 @@ ROG Companion talks to [`asusctl`/`asusd`](https://asus-linux.org), so it suppor
 Install the ready-built package from the [latest release](https://github.com/Deltaharsha/rog-companion/releases/latest). Pacman pulls in everything it needs from the official repos:
 
 ```sh
-sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.3.1/rog-companion-0.3.1-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/Deltaharsha/rog-companion/releases/download/v0.3.2/rog-companion-0.3.2-1-x86_64.pkg.tar.zst
 systemctl --user enable --now rog-companion.service rog-companion-policy.service
 ```
 

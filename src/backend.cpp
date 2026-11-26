@@ -52,11 +52,12 @@ QString Backend::readFile(const QString&p){QFile f(p);if(!f.open(QIODevice::Read
 QString Backend::armoury(const QString&n)const{return readFile(fw+n+"/current_value");}
 Backend::Backend(QObject*p,bool start):QObject(p){
  m_timeout.setSingleShot(true);m_timeout.setInterval(10000);
- connect(&m_timeout,&QTimer::timeout,this,[this]{m_process.kill();complete(false,tr("The control service did not respond within 10 seconds."));});
+ connect(&m_timeout,&QTimer::timeout,this,[this]{m_commandTimedOut=true;m_process.kill();});
  connect(&m_process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart)complete(false,m_process.errorString());});
  connect(&m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus s){
   if(!m_busy)return;
   m_timeout.stop();QString out=QString::fromUtf8(m_process.readAllStandardOutput());QString err=QString::fromUtf8(m_process.readAllStandardError());
+  if(m_commandTimedOut){complete(false,tr("The control service did not respond within 10 seconds."));return;}
   m_output+=out;const bool reportedError=QRegularExpression("(?:\\[ERROR|Error:|failed to|org\\.freedesktop\\.DBus\\.Error)",QRegularExpression::CaseInsensitiveOption).match(out+err).hasMatch();if(code||s!=QProcess::NormalExit||reportedError){complete(false,(err+out).trimmed());return;}step();
  });
  m_gpuTimeout.setSingleShot(true);m_gpuTimeout.setInterval(3000);
@@ -108,7 +109,7 @@ void Backend::execute(const QList<Command>&cmds,std::function<void(bool,QString)
  if(m_busy){setMessage(tr("Wait for the current operation to finish."));return;}
  m_busy=true;emit busyChanged();m_output.clear();m_queue.clear();for(const auto&c:cmds)m_queue.enqueue(c);m_done=done;step();
 }
-void Backend::step(){if(m_queue.isEmpty()){complete(true,m_output.trimmed());return;}auto c=m_queue.dequeue();m_process.start(c.program,c.args);m_timeout.start();}
+void Backend::step(){if(m_queue.isEmpty()){complete(true,m_output.trimmed());return;}auto c=m_queue.dequeue();m_commandTimedOut=false;m_process.start(c.program,c.args);m_timeout.start();}
 void Backend::complete(bool ok,const QString&out){m_timeout.stop();m_queue.clear();m_busy=false;emit busyChanged();auto cb=std::move(m_done);m_done={};if(cb)cb(ok,out);}
 QVariantMap Backend::policy()const{QFile f(stateDir()+"/policy.json");if(!f.open(QIODevice::ReadOnly))return {};return QJsonDocument::fromJson(f.readAll()).object().toVariantMap();}
 bool Backend::savePolicy(const QString&key,const QVariant&v){auto d=policy();d[key]=v;QDir().mkpath(stateDir());QSaveFile f(stateDir()+"/policy.json");if(!f.open(QIODevice::WriteOnly))return false;f.write(QJsonDocument(QJsonObject::fromVariantMap(d)).toJson());return f.commit();}
@@ -116,8 +117,11 @@ void Backend::readState(){
  QVariantMap s;
  s["model"]=readFile("/sys/class/dmi/id/product_name");s["updated"]=QDateTime::currentDateTime().toString("HH:mm:ss");
  s["ac"]=false;
+ m_battery.clear();
  QDir power("/sys/class/power_supply");for(const auto&name:power.entryList(QDir::Dirs|QDir::NoDotAndDotDot)){
-  const QString p=power.filePath(name);if(readFile(p+"/type")=="Battery")m_battery=p;
+  const QString p=power.filePath(name);if(readFile(p+"/type")=="Battery"){
+   if(readFile(p+"/scope")!="Device" && (m_battery.isEmpty() || (!QFileInfo::exists(m_battery+"/charge_control_end_threshold") && QFileInfo::exists(p+"/charge_control_end_threshold"))))m_battery=p;
+  }
   else if(readFile(p+"/online")=="1")s["ac"]=true;
  }
  s["battery"]=number(m_battery+"/capacity");s["batteryStatus"]=readFile(m_battery+"/status");
@@ -153,25 +157,24 @@ void Backend::readState(){
   }
  }
  s["cpuTemp"]=QVariant();s["gpuTemp"]=QVariant();s["fanCpu"]=QVariant();s["fanGpu"]=QVariant();s["fanMid"]=QVariant();
+ m_fanCurves.clear();
  QDir hw("/sys/class/hwmon");for(const auto&name:hw.entryList(QDir::Dirs|QDir::NoDotAndDotDot)){
   auto p=hw.filePath(name);auto kind=readFile(p+"/name");
   if(kind=="k10temp")s["cpuTemp"]=number(p+"/temp1_input",1000);
   if(gpuAwake&&kind.startsWith("nvidia"))s["gpuTemp"]=number(p+"/temp1_input",1000);
   if(kind=="asus_custom_fan_curve") {
-   bool readable=true;
    for(int fan=1;fan<=3;++fan) {
     QStringList points;
     for(int point=1;point<=8;++point) {
      const auto stem=p+QString("/pwm%1_auto_point%2_").arg(fan).arg(point);
      const auto temp=number(stem+"temp"),pwm=number(stem+"pwm");
-     if(!temp.isValid()||!pwm.isValid()){readable=false;break;}
+     if(!temp.isValid()||!pwm.isValid())break;
      points<<QString("%1c:%2%").arg(temp.toInt()).arg(qRound(pwm.toDouble()*100/255));
     }
     const QString key=QStringList{"cpu","gpu","mid"}[fan-1];
     m_fanCurves[key]=points.size()==8?points.join(','):QString();
     m_fanCurves[key+"Enabled"]=readFile(p+QString("/pwm%1_enable").arg(fan))=="1";
    }
-   if(readable)m_fansAvailable=true;
   }
   if(kind=="asus") {s["fanCpu"]=number(p+"/fan1_input");s["fanGpu"]=number(p+"/fan2_input");s["fanMid"]=number(p+"/fan3_input");}
  }
@@ -184,13 +187,13 @@ void Backend::readState(){
  auto mux=armoury("gpu_mux_mode"),disabled=armoury("dgpu_disable");
  s["gpuMode"]=mux=="0"?"NVIDIA only":disabled=="1"?"Integrated":"Hybrid";
  if(mux.isEmpty())s["gpuMode"]="Unavailable";
- s["pendingGpu"]=m_pendingGpu;
+ s["pendingGpu"]=m_pendingGpu;s["gpuQueueKnown"]=m_gpuQueueKnown;
  s["error"]="";m_state=s;buildControls();emit changed();
  requestQueuedGpu();
 }
 // The queued GPU mode lives in asusd. Ask asynchronously: a hung daemon must never freeze the panel,
 // and this runs on every poll.
-void Backend::requestQueuedGpu(std::function<void()> after){
+void Backend::requestQueuedGpu(std::function<void(bool)> after){
  // Keep the follow-up on the object: a poll that supersedes this request must still deliver it.
  if(after)m_afterGpu=std::move(after);
  const int generation=++m_gpuGeneration;
@@ -208,27 +211,47 @@ void Backend::requestQueuedGpu(std::function<void()> after){
    // A newer request supersedes this one, so a slow old answer can't overwrite fresh state.
    if(generation!=m_gpuGeneration)return;
    applyQueuedGpu(*results);
-   if(m_afterGpu){auto done=std::move(m_afterGpu);m_afterGpu={};done();}
+   if(m_afterGpu){auto done=std::move(m_afterGpu);m_afterGpu={};done(m_gpuQueueKnown);}
   });
  }
 }
 void Backend::applyQueuedGpu(const QVariantMap &queued){
  // QueuedGpuValue is daemon state, not a claim that routing already changed.
  const auto queuedMux=queued.value("gpu_mux_mode"),queuedDisable=queued.value("dgpu_disable");
- if(!queuedMux.isValid()||!queuedDisable.isValid())return;
- const int qm=queuedMux.toInt(),qd=queuedDisable.toInt();
+
+ auto resolve=[](const QVariant &queued,const QString &current,bool &known){
+  bool ok=false;
+  int target=queued.toInt(&ok);
+  if(ok && target==-1)target=current.toInt(&ok);
+  known=ok && (target==0 || target==1);
+  return target;
+ };
+ bool muxKnown=false,disableKnown=false;
+ const int mux=resolve(queuedMux,armoury("gpu_mux_mode"),muxKnown);
+ const int disabled=resolve(queuedDisable,armoury("dgpu_disable"),disableKnown);
+ const bool known=muxKnown && disableKnown;
  QString pending;
- if(qm>=0||qd>=0){const int targetMux=qm>=0?qm:armoury("gpu_mux_mode").toInt(),targetDisable=qd>=0?qd:armoury("dgpu_disable").toInt();
-  pending=targetMux==0?"ultimate":targetDisable==1?"integrated":"hybrid";}
- if(pending==m_pendingGpu)return;
- m_pendingGpu=pending;m_state["pendingGpu"]=pending;buildControls();emit changed();
+ if(known && (queuedMux.toInt()>=0 || queuedDisable.toInt()>=0))
+  pending=mux==0?"ultimate":disabled==1?"integrated":"hybrid";
+ if(pending==m_pendingGpu && known==m_gpuQueueKnown)return;
+ m_pendingGpu=pending;m_gpuQueueKnown=known;
+ m_state["pendingGpu"]=pending;m_state["gpuQueueKnown"]=known;
+ buildControls();emit changed();
 }
 void Backend::discover(){
+ m_serviceFans.clear();
  m_asusAvailable=!QStandardPaths::findExecutable("asusctl").isEmpty();m_ppAvailable=!QStandardPaths::findExecutable("powerprofilesctl").isEmpty();
- if(!m_asusAvailable){setMessage(tr("asusctl is missing; ASUS controls are unavailable."));buildControls();return;}
- execute({{"asusctl",{"fan-curve","--mod-profile",m_fanProfile}}},[this](bool ok,QString out){m_fansAvailable=m_fansAvailable||(ok&&out.contains("fan:")&&out.contains("pwm:"));m_fanCurves["raw"]=out;buildControls();if(!ok)setMessage(tr("Fan service unavailable: %1").arg(out));});
+ if(!m_asusAvailable){setMessage(tr("asusctl is missing; ASUS controls are unavailable."));buildControls();emit discoveryFinished();return;}
+ execute({{"asusctl",{"fan-curve","--mod-profile",m_fanProfile}}},[this](bool ok,QString out){
+  if(ok){
+   static const QRegularExpression fanPattern(R"(fan:\s*(cpu|gpu|mid)\b)",QRegularExpression::CaseInsensitiveOption);
+   auto matches=fanPattern.globalMatch(out);
+   while(matches.hasNext())m_serviceFans.append(matches.next().captured(1).toLower());
+  }else setMessage(tr("Fan service unavailable: %1").arg(out));
+  buildControls();emit discoveryFinished();
+ });
 }
-void Backend::refresh(){if(m_busy)return;readState();discover();}
+void Backend::refresh(){if(m_busy)return;m_panelRates=panelRates();readState();discover();}
 QVariantMap Backend::control(const QString&id)const{for(const auto&v:m_controls){auto c=v.toMap();if(c["id"]==id)return c;}return {};}
 bool Backend::validChoice(const QVariantMap&c,const QVariant&v){for(const auto&o:c["options"].toList())if(o.toMap()["value"].toString()==v.toString())return true;return false;}
 void Backend::buildControls(){
@@ -248,7 +271,7 @@ void Backend::buildControls(){
  numeric("charge",tr("Charge ceiling"),"Power",m_state["chargeLimit"],20,100,"%",m_asusAvailable&&m_state["chargeLimit"].isValid());
  list<<add("oneshot",tr("Charge to 100% once"),"Power","action",true,m_asusAvailable,{},true,tr("Temporarily charge fully; ASUS restores the configured ceiling afterward."));
  list<<add("boost",tr("CPU turbo boost"),"Power","toggle",readFile("/sys/devices/system/cpu/cpufreq/boost")=="1",QFileInfo::exists("/sys/devices/system/cpu/cpufreq/boost"),{},true,tr("Requires system authentication. Disabling boost reduces peak performance and heat until reboot."));
- choice("gpu",tr("Graphics mode"),"Power",armoury("gpu_mux_mode")=="0"?"ultimate":armoury("dgpu_disable")=="1"?"integrated":"hybrid",options({{tr("Hybrid"),"hybrid"},{tr("Integrated / Eco"),"integrated"},{tr("NVIDIA / Ultimate"),"ultimate"}}),m_asusAvailable&&!armoury("gpu_mux_mode").isEmpty(),true,tr("Queued by ASUS for reboot. Eco can disable NVIDIA-wired HDMI. Save work before rebooting. Current pending request: %1").arg(m_pendingGpu.isEmpty()?tr("none queued"):m_pendingGpu));
+ choice("gpu",tr("Graphics mode"),"Power",armoury("gpu_mux_mode")=="0"?"ultimate":armoury("dgpu_disable")=="1"?"integrated":"hybrid",options({{tr("Hybrid"),"hybrid"},{tr("Integrated / Eco"),"integrated"},{tr("NVIDIA / Ultimate"),"ultimate"}}),m_asusAvailable&&!armoury("gpu_mux_mode").isEmpty()&&!armoury("dgpu_disable").isEmpty(),true,tr("Queued by ASUS for reboot. Eco can disable NVIDIA-wired HDMI. Save work before rebooting. Current pending request: %1").arg(!m_gpuQueueKnown?tr("unknown"):m_pendingGpu.isEmpty()?tr("none queued"):m_pendingGpu));
  for(const auto&attr:QStringList{"ppt_pl1_spl","ppt_pl2_sppt","ppt_pl3_fppt","nv_tgp","nv_dynamic_boost","nv_temp_target"}){
   const QMap<QString,QString> labels{{"ppt_pl1_spl",tr("CPU sustained power")},{"ppt_pl2_sppt",tr("CPU short boost power")},{"ppt_pl3_fppt",tr("CPU fast boost power")},{"nv_tgp",tr("GPU power limit")},{"nv_dynamic_boost",tr("GPU Dynamic Boost")},{"nv_temp_target",tr("GPU temperature target")}};
   if(!QFileInfo::exists(fw+attr))continue;  // this model has no such limit: don't show it at all
@@ -259,8 +282,11 @@ void Backend::buildControls(){
      tr("Shown for reference. ROG Companion doesn't change firmware power limits yet."));
   c["min"]=low.isValid()?low.toInt():0;c["max"]=high.isValid()?high.toInt():qMax(100,value.toInt());c["step"]=1;c["unit"]=attr=="nv_temp_target"?"°C":"W";list<<c;
  }
+ m_fansAvailable=false;
  for(const auto&fan:QStringList{"cpu","gpu","mid"}){
-  auto c=add("fan_"+fan,tr("%1 fan curve").arg(fan.toUpper()),"Fans","text","",m_fansAvailable, tr("ASUS fan service is unavailable."),true,tr("%1 profile. Eight increasing temperature points, 0–100% speed. Example: 30c:10%,40c:20%,50c:30%,60c:40%,70c:55%,80c:70%,90c:90%,100c:100%. Apply saves and enables this fan curve.").arg(m_fanProfile));
+  const bool available=m_asusAvailable && (m_serviceFans.contains(fan)||!m_fanCurves.value(fan).toString().isEmpty());
+  m_fansAvailable |= available;
+  auto c=add("fan_"+fan,tr("%1 fan curve").arg(fan.toUpper()),"Fans","text","",available, tr("ASUS fan service is unavailable."),true,tr("%1 profile. Eight increasing temperature points, 0–100% speed. Example: 30c:10%,40c:20%,50c:30%,60c:40%,70c:55%,80c:70%,90c:90%,100c:100%. Apply saves and enables this fan curve.").arg(m_fanProfile));
   c["value"]=m_fanCurves.value(fan);list<<c;
  }
  list<<add("fan_default",tr("Restore firmware fan curves"),"Fans","action",true,m_fansAvailable,{},true,tr("Restore default curves for the active profile."));
@@ -310,16 +336,18 @@ QString Backend::validateCurve(const QString&input){
  if(prevP!=100)return tr("The final fan point must reach 100% for cooling headroom.");
  return {};
 }
+void Backend::reportControl(bool ok,const QString &message){setMessage(message);emit controlFinished(ok);}
 void Backend::setControl(const QString&id,const QVariant&value){
- if(m_busy){setMessage(tr("An operation is still running."));return;}auto c=control(id);if(c.isEmpty()||!c["available"].toBool()){setMessage(tr("This control is not available."));return;}
- auto kind=c["kind"].toString();if(kind=="choice"&&!validChoice(c,value)){setMessage(tr("Invalid selection."));return;}
- if(kind=="number"){bool ok;double d=value.toDouble(&ok);if(!ok||!std::isfinite(d)||d<c["min"].toDouble()||d>c["max"].toDouble()||std::floor(d)!=d){setMessage(tr("Value is outside the supported range."));return;}}
+ if(m_busy){reportControl(false,tr("An operation is still running."));return;}auto c=control(id);if(c.isEmpty()||!c["available"].toBool()){reportControl(false,tr("This control is not available."));return;}
+ auto kind=c["kind"].toString();if(kind=="choice"&&!validChoice(c,value)){reportControl(false,tr("Invalid selection."));return;}
+ if(kind=="toggle" && value.toString()!="true" && value.toString()!="false"){reportControl(false,tr("Use true or false for this control."));return;}
+ if(kind=="number"){bool ok;double d=value.toDouble(&ok);if(!ok||!std::isfinite(d)||d<c["min"].toDouble()||d>c["max"].toDouble()||std::floor(d)!=d){reportControl(false,tr("Value is outside the supported range."));return;}}
  QList<Command> cmds;QString v=value.toString();auto asus=[&](QStringList a){cmds.append(Command{"asusctl",a});};bool deferred=false;
  if(id=="profile")asus({"profile","set",v});
  else if(id=="batteryProfile"||id=="acProfile"||id=="refreshMode"){
-  if(!savePolicy(id,value)){setMessage(tr("Unable to save automation policy."));return;}
+  if(!savePolicy(id,value)){reportControl(false,tr("Unable to save automation policy."));return;}
   if(id!="refreshMode")asus({"profile","set",id=="batteryProfile"?"-b":"-a",v=="power-saver"?"Quiet":v=="balanced"?"Balanced":"Performance"});
-  cmds.append(Command{"systemctl",{"--user","restart","rog-companion-policy.service"}});
+  cmds.append(Command{"systemctl",{"--user","start","rog-companion-policy.service"}});
  } else if(id=="charge")asus({"battery","limit",QString::number(value.toInt())});
  else if(id=="oneshot")asus({"battery","oneshot","100"});
  else if(id=="boost")cmds.append(Command{"pkexec",{"/usr/lib/rog-companion/rog-companion-power-helper","boost",value.toBool()?"1":"0"}});
@@ -327,7 +355,7 @@ void Backend::setControl(const QString&id,const QVariant&value){
   if(v=="ultimate"){asus({"armoury","set","dgpu_disable","0"});asus({"armoury","set","gpu_mux_mode","0"});}
   else{asus({"armoury","set","gpu_mux_mode","1"});asus({"armoury","set","dgpu_disable",v=="integrated"?"1":"0"});}deferred=true;
  }else if(id.startsWith("fan_")&&id!="fan_default"&&id!="fan_enabled"){
-  auto error=validateCurve(v);if(!error.isEmpty()){setMessage(error);return;}
+  auto error=validateCurve(v);if(!error.isEmpty()){reportControl(false,error);return;}
   v.remove(' ');asus({"fan-curve","--mod-profile",m_fanProfile,"--fan",id.mid(4),"--data",v});asus({"fan-curve","--mod-profile",m_fanProfile,"--fan",id.mid(4),"--enable-fan-curve","true"});
  }else if(id=="fan_default")asus({"fan-curve","--default"});
  else if(id=="fan_enabled")asus({"fan-curve","--mod-profile",m_fanProfile,"--enable-fan-curves",value.toBool()?"true":"false"});
@@ -337,7 +365,7 @@ void Backend::setControl(const QString&id,const QVariant&value){
   // Keep the user's colour when switching effects; gold is only the fallback when none is known.
   QString colour=control("color").value("value").toString();if(colour.isEmpty())colour="ffd700";
   if(v=="breathe")asus({"aura","effect",v,"-c",colour,"--colour2","111111"});else asus({"aura","effect",v,"-c",colour});}
- else if(id=="color"){if(!QRegularExpression("^[0-9a-fA-F]{6}$").match(v).hasMatch()){setMessage(tr("Enter six hexadecimal digits, without #."));return;}asus({"aura","effect","static","-c",v});}
+ else if(id=="color"){if(!QRegularExpression("^[0-9a-fA-F]{6}$").match(v).hasMatch()){reportControl(false,tr("Enter six hexadecimal digits, without #."));return;}asus({"aura","effect","static","-c",v});}
  else if(id=="slash")asus({"slash","set",value.toBool()?"--enable":"--disable"});
  else if(id.startsWith("keyboard") && id!="keyboard"){
   QStringList a{"aura","power","keyboard"};for(const auto &pair:QList<QPair<QString,QString>>{{"keyboardBoot","--boot"},{"keyboardAwake","--awake"},{"keyboardSleep","--sleep"},{"keyboardShutdown","--shutdown"}}){bool on=pair.first==id?value.toBool():control(pair.first).value("value").toBool();if(on)a<<pair.second;}asus(a);
@@ -351,29 +379,33 @@ void Backend::setControl(const QString&id,const QVariant&value){
  else if(id=="sleep")cmds.append(Command{"systemctl",{"suspend"}});
  else if(id=="reboot")cmds.append(Command{"systemctl",{"reboot"}});
  else if(id=="shutdown")cmds.append(Command{"systemctl",{"poweroff"}});
- else{setMessage(tr("No handler exists for this control."));return;}
+ else{reportControl(false,tr("No handler exists for this control."));return;}
  setMessage(tr("Applying %1…").arg(c["label"].toString()));
  execute(cmds,[this,id,value,deferred](bool ok,QString out){
-  if(!ok){setMessage(tr("Could not apply: %1").arg(out));readState();return;}
+  if(!ok){readState();reportControl(false,tr("Could not apply: %1").arg(out));return;}
   readState();
   if(deferred){
    // Judge the result only once asusd has answered for the state after this write.
    setMessage(tr("Checking the queued graphics mode…"));
-   requestQueuedGpu([this,value]{
-    if(m_pendingGpu==value.toString())setMessage(tr("Graphics request accepted by ASUS. Reboot required; current GPU routing has not changed."));
-    else setMessage(tr("Command accepted; firmware has not confirmed the queued graphics mode. Refresh before retrying."));
+   requestQueuedGpu([this,value](bool fresh){
+    if(!fresh){reportControl(false,tr("Graphics queue could not be read. Refresh to check."));return;}
+    if(m_pendingGpu.isEmpty() && control("gpu").value("value")==value){reportControl(true,tr("Requested graphics mode is active. No restart is queued."));return;}
+    if(m_pendingGpu==value.toString())reportControl(true,tr("Graphics request accepted by ASUS. Reboot required; current GPU routing has not changed."));
+    else reportControl(false,tr("Command accepted; firmware has not confirmed the queued graphics mode. Refresh before retrying."));
    });
+  } else if(id=="batteryProfile"||id=="acProfile"||id=="refreshMode"){
+   reportControl(true,tr("Automation preference saved."));
   } else if(id=="oneshot") {
-   setMessage(m_state["chargeLimit"].toInt()==100?tr("Verified: one-shot charge ceiling is 100%."):tr("Command accepted; one-shot charge ceiling has not been confirmed."));
+   const bool match=m_state["chargeLimit"].toInt()==100;reportControl(match,match?tr("Verified: one-shot charge ceiling is 100%."):tr("Command accepted; one-shot charge ceiling has not been confirmed."));
   } else if(id=="boost") {
-   setMessage((readFile("/sys/devices/system/cpu/cpufreq/boost")=="1")==value.toBool()?tr("Verified: CPU boost updated."):tr("Readback mismatch: CPU boost did not match the request."));
+   const bool match=readFile("/sys/devices/system/cpu/cpufreq/boost")== (value.toBool()?"1":"0");reportControl(match,match?tr("Verified: CPU boost updated."):tr("Readback mismatch: CPU boost did not match the request."));
   } else if(id.startsWith("fan_")||id=="lock"||id=="sleep"||id=="reboot"||id=="shutdown") {
-   setMessage(tr("Command accepted. Status refreshed."));
+   reportControl(true,tr("Command accepted. Status refreshed."));
   } else {
    const auto actual=control(id).value("value");
    bool match=actual.toString().compare(value.toString(),Qt::CaseInsensitive)==0;
    if(id=="brightness")match=std::abs(actual.toDouble()-value.toDouble())<=1.0;
-   setMessage(match?tr("Verified: setting matches device readback."):tr("Readback mismatch: device has not confirmed the requested setting. Refresh to check."));
+   reportControl(match,match?tr("Verified: setting matches device readback."):tr("Readback mismatch: device has not confirmed the requested setting. Refresh to check."));
   }
   if(id.startsWith("fan_")||id=="profile")discover();
  });
